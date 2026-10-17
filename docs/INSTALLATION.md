@@ -1,0 +1,271 @@
+# Panduan Instalasi LabRemote
+
+## 1. Prasyarat
+
+- .NET 8 SDK untuk build dari source;
+- jaringan lokal yang sama atau routing antar-subnet;
+- port TCP `5050` dari controller ke agent;
+- UDP broadcast port `7` atau `9` untuk Wake-on-LAN;
+- token rahasia yang sama pada controller dan semua agent.
+
+Generate token kuat dari PowerShell:
+
+```powershell
+$bytes = New-Object byte[] 32
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+([BitConverter]::ToString($bytes) -replace '-','').ToLowerInvariant()
+```
+
+## 2. Build dan publish
+
+### Controller Windows
+
+```powershell
+dotnet publish .\LabRemote\LabRemote.csproj `
+  -c Release -r win-x64 --self-contained true `
+  -o .\publish-controller
+```
+
+### Controller Linux x64
+
+```bash
+dotnet publish ./LabRemote/LabRemote.csproj \
+  -c Release -r linux-x64 --self-contained true \
+  -o ./publish-controller
+```
+
+### Agent Windows x64
+
+```powershell
+dotnet publish .\LabRemote.Agent\LabRemote.Agent.csproj `
+  -c Release -r win-x64 --self-contained true `
+  -o .\publish-agent
+```
+
+### Agent Debian/Ubuntu x64
+
+```powershell
+dotnet publish .\LabRemote.Agent\LabRemote.Agent.csproj `
+  -c Release -r linux-x64 --self-contained true `
+  -o .\publish-agent
+```
+
+Untuk server ARM64 gunakan `linux-arm64`.
+
+## 3. Instalasi agent di Debian/Linux
+
+Salin hasil publish:
+
+```bash
+scp -r publish-agent user@IP_SERVER:/tmp/labremote-agent
+```
+
+Di Debian:
+
+```bash
+sudo mkdir -p /opt/labremote-agent
+sudo cp -r /tmp/labremote-agent/* /opt/labremote-agent/
+sudo chmod +x /opt/labremote-agent/LabRemote.Agent
+```
+
+Buat secret file:
+
+```bash
+sudo install -m 600 /dev/null /etc/labremote-agent.env
+sudo nano /etc/labremote-agent.env
+```
+
+Isi:
+
+```env
+LAB_REMOTE_AGENT_TOKEN=GANTI_DENGAN_TOKEN_KUAT
+```
+
+Buat service:
+
+```bash
+sudo nano /etc/systemd/system/labremote-agent.service
+```
+
+Isi:
+
+```ini
+[Unit]
+Description=LabRemote Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/labremote-agent
+EnvironmentFile=/etc/labremote-agent.env
+ExecStart=/opt/labremote-agent/LabRemote.Agent
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Aktifkan:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now labremote-agent
+sudo systemctl status labremote-agent
+```
+
+Konfigurasi appsettings dapat menggunakan token kosong karena token produksi dibaca dari `EnvironmentFile`:
+
+```json
+{
+  "Urls": "http://0.0.0.0:5050",
+  "Agent": { "Token": "" }
+}
+```
+
+Firewall UFW, batasi ke IP controller:
+
+```bash
+sudo ufw allow from IP_CONTROLLER to any port 5050 proto tcp
+sudo ufw status
+```
+
+Uji:
+
+```bash
+curl http://127.0.0.1:5050/health
+sudo ss -tulpn | grep ':5050'
+```
+
+## 4. Instalasi agent di Windows
+
+Buka PowerShell sebagai Administrator. Salin folder publish ke:
+
+```text
+C:\Program Files\LabRemote.Agent
+```
+
+Set token sebagai environment variable sistem:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "LAB_REMOTE_AGENT_TOKEN",
+  "GANTI_DENGAN_TOKEN_KUAT",
+  "Machine"
+)
+```
+
+Buat rule firewall:
+
+```powershell
+New-NetFirewallRule `
+  -DisplayName "LabRemote Agent 5050" `
+  -Direction Inbound `
+  -Protocol TCP `
+  -LocalPort 5050 `
+  -Action Allow `
+  -Profile Domain,Private
+```
+
+Daftarkan sebagai Windows Service:
+
+```powershell
+New-Service `
+  -Name "LabRemoteAgent" `
+  -DisplayName "LabRemote Agent" `
+  -Description "LabRemote control agent" `
+  -BinaryPathName "C:\Program Files\LabRemote.Agent\LabRemote.Agent.exe" `
+  -StartupType Automatic
+```
+
+Jalankan:
+
+```powershell
+Start-Service LabRemoteAgent
+Get-Service LabRemoteAgent
+```
+
+Uji lokal:
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:5050/health
+Get-NetTCPConnection -LocalPort 5050 -State Listen
+```
+
+## 5. Instalasi controller
+
+### Windows
+
+```powershell
+$env:LAB_REMOTE_AGENT_TOKEN = "GANTI_DENGAN_TOKEN_KUAT"
+cd C:\LabRemote\publish-controller
+.\LabRemote.exe
+```
+
+### Linux
+
+```bash
+export LAB_REMOTE_AGENT_TOKEN='GANTI_DENGAN_TOKEN_KUAT'
+cd /opt/labremote-controller
+./LabRemote
+```
+
+Controller akan menampilkan seluruh device yang tersimpan dan menjalankan discovery otomatis pada startup. Gunakan tombol `Discover` untuk memindai ulang.
+
+## 6. Pengujian tanpa shutdown
+
+Uji health dari controller:
+
+```powershell
+Invoke-WebRequest http://IP_AGENT:5050/health
+```
+
+Uji token tanpa mematikan komputer:
+
+```powershell
+Invoke-WebRequest `
+  -Method Post `
+  -Uri "http://IP_AGENT:5050/power/test" `
+  -Headers @{ "X-Agent-Token" = "TOKEN_YANG_SAMA" }
+```
+
+Respons `400 Bad Request` menunjukkan token diterima dan action `test` ditolak karena memang bukan action valid. Respons `401 Unauthorized` menunjukkan token tidak sama.
+
+## 7. Troubleshooting
+
+### Service Linux gagal `203/EXEC`
+
+```bash
+ls -l /opt/labremote-agent/LabRemote.Agent
+file /opt/labremote-agent/LabRemote.Agent
+sudo chmod +x /opt/labremote-agent/LabRemote.Agent
+sudo journalctl -u labremote-agent -n 50 --no-pager
+```
+
+Pastikan publish sesuai arsitektur server: `linux-x64` untuk `x86_64`, atau `linux-arm64` untuk `aarch64`.
+
+### Status selalu Offline
+
+```bash
+sudo ss -tulpn | grep ':5050'
+sudo systemctl status labremote-agent
+```
+
+Periksa firewall dan IP address. Agent harus listen pada `0.0.0.0:5050`, bukan hanya `127.0.0.1`.
+
+### Status 401 Unauthorized
+
+Pastikan token controller dan agent sama. Pada Linux periksa service:
+
+```bash
+sudo systemctl cat labremote-agent
+sudo systemctl daemon-reload
+sudo systemctl restart labremote-agent
+```
+
+### Wake-on-LAN gagal
+
+Periksa MAC address, aktifkan WoL di BIOS/UEFI, gunakan kabel LAN, dan pastikan switch meneruskan broadcast. Uji terlebih dahulu dengan satu komputer yang sudah diketahui mendukung WoL.

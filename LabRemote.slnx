@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="LabRemote.Agent/LabRemote.Agent.csproj" />
+  <Project Path="LabRemote/LabRemote.csproj" />
+</Solution>
