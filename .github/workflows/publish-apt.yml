@@ -41,6 +41,7 @@ jobs:
       - name: Create signed APT repository
         env:
           APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
           VERSION="${{ github.event.inputs.version || github.ref_name }}"
@@ -52,19 +53,24 @@ jobs:
 
           export GNUPGHOME="$RUNNER_TEMP/gnupg"
           mkdir -m 700 "$GNUPGHOME"
-          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --no-tty --import
           KEY_ID="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^sec:/{print $5; exit}')"
           test -n "$KEY_ID"
+          printf '%s' "$APT_GPG_PASSPHRASE" > "$RUNNER_TEMP/gpg-passphrase"
+          chmod 600 "$RUNNER_TEMP/gpg-passphrase"
+          gpgconf --kill gpg-agent || true
           gpg --batch --armor --export "$KEY_ID" > "$SITE/ocphlabremote-archive-key.asc"
           gpg --batch --export "$KEY_ID" > "$SITE/ocphlabremote-archive-keyring.gpg"
 
           (cd "$SITE" && dpkg-scanpackages pool /dev/null | gzip -9c > dists/stable/main/binary-amd64/Packages.gz)
           apt-ftparchive release "$SITE/dists/stable" > "$SITE/dists/stable/Release"
-          gpg --batch --no-tty --yes --pinentry-mode loopback --passphrase '' \
-            --armor --detach-sign \
+          gpg --batch --no-options --no-tty --yes --pinentry-mode loopback \
+            --passphrase-file "$RUNNER_TEMP/gpg-passphrase" --local-user "$KEY_ID" \
+            --trust-model always --armor --detach-sign \
             -o "$SITE/dists/stable/Release.gpg" "$SITE/dists/stable/Release"
-          gpg --batch --no-tty --yes --pinentry-mode loopback --passphrase '' \
-            --clearsign \
+          gpg --batch --no-options --no-tty --yes --pinentry-mode loopback \
+            --passphrase-file "$RUNNER_TEMP/gpg-passphrase" --local-user "$KEY_ID" \
+            --trust-model always --clearsign \
             -o "$SITE/dists/stable/InRelease" "$SITE/dists/stable/Release"
 
           cat > "$SITE/index.html" <<'EOF'
