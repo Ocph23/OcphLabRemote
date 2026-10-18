@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+if [ ! -f /etc/labremote-agent.env ]; then
+    umask 077
+    printf 'LAB_REMOTE_AGENT_TOKEN=%s\n' "$(openssl rand -hex 32)" > /etc/labremote-agent.env
+fi
+chmod 600 /etc/labremote-agent.env
+
+systemctl daemon-reload
+systemctl enable ocphlabremote-agent.service
+systemctl restart ocphlabremote-agent.service
+
+echo "LabRemote Agent aktif pada port TCP 5050."
+echo "Token tersimpan di /etc/labremote-agent.env."
+exit 0

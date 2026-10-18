@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
+    systemctl disable --now ocphlabremote-agent.service 2>/dev/null || true
+fi
+systemctl daemon-reload 2>/dev/null || true
+exit 0

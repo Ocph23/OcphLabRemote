@@ -16,6 +16,7 @@ Dokumentasi lengkap:
 
 - [Dokumentasi sistem](docs/SYSTEM-DOCUMENTATION.md)
 - [Panduan instalasi](docs/INSTALLATION.md)
+- [Paket APT/Debian](docs/APT-PACKAGING.md)
 
 ## Build
 

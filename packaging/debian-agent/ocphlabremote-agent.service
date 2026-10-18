@@ -1,0 +1,17 @@
+[Unit]
+Description=OCPH LabRemote Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/labremote-agent
+EnvironmentFile=/etc/labremote-agent.env
+ExecStart=/opt/labremote-agent/LabRemote.Agent
+Restart=always
+RestartSec=5
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target

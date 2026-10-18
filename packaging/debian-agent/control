@@ -1,0 +1,9 @@
+Package: ocphlabremote-agent
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: @ARCH@
+Maintainer: SMKN 8 TIK Kota Jayapura
+Description: LabRemote remote-control agent
+ Agent service for monitoring and controlling authorized laboratory computers.
+Depends: systemd, openssl
