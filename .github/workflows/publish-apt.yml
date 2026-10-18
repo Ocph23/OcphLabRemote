@@ -1,0 +1,88 @@
+name: Publish OCPH LabRemote APT repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version, for example 0.1.0
+        required: true
+        default: 0.1.0
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-repository:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install Debian repository tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev apt-utils gnupg openssl
+
+      - name: Build Debian package
+        env:
+          PACKAGE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          VERSION="${PACKAGE_VERSION#v}"
+          bash packaging/build-agent-deb.sh "$VERSION"
+
+      - name: Create signed APT repository
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          SITE="$GITHUB_WORKSPACE/site"
+          mkdir -p "$SITE/pool/main/o/ocphlabremote-agent"
+          mkdir -p "$SITE/dists/stable/main/binary-amd64"
+          cp "artifacts/deb/ocphlabremote-agent_${VERSION}_amd64.deb" "$SITE/pool/main/o/ocphlabremote-agent/"
+
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          KEY_ID="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^sec:/{print $5; exit}')"
+          test -n "$KEY_ID"
+          gpg --batch --armor --export "$KEY_ID" > "$SITE/ocphlabremote-archive-key.asc"
+          gpg --batch --export "$KEY_ID" > "$SITE/ocphlabremote-archive-keyring.gpg"
+
+          (cd "$SITE" && dpkg-scanpackages pool /dev/null | gzip -9c > dists/stable/main/binary-amd64/Packages.gz)
+          apt-ftparchive release "$SITE/dists/stable" > "$SITE/dists/stable/Release"
+          gpg --batch --yes --armor --detach-sign \
+            -o "$SITE/dists/stable/Release.gpg" "$SITE/dists/stable/Release"
+          gpg --batch --yes --clearsign \
+            -o "$SITE/dists/stable/InRelease" "$SITE/dists/stable/Release"
+
+          cat > "$SITE/index.html" <<'EOF'
+          <!doctype html><html><body><h1>OCPH LabRemote APT Repository</h1>
+          <p>Install the public key, add the repository, then run <code>apt install ocphlabremote-agent</code>.</p>
+          </body></html>
+          EOF
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build-repository
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
