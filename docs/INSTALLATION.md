@@ -241,7 +241,7 @@ sudo systemctl restart ocphlabremote-agent
 
 Pada TUI, pilih device, tekan `Enter`, lalu pilih `Wake + Launch` dan masukkan alias aplikasi. Controller mengirim Wake-on-LAN, menunggu agent online maksimal 60 detik, lalu memanggil aplikasi tersebut.
 
-## 4. Instalasi agent di Windows
+### Instalasi agent manual di Windows
 
 Buka PowerShell sebagai Administrator. Salin folder publish ke:
 
@@ -296,7 +296,7 @@ Invoke-WebRequest http://127.0.0.1:5050/health
 Get-NetTCPConnection -LocalPort 5050 -State Listen
 ```
 
-## 5. Instalasi controller
+## 6. Instalasi controller
 
 ### Windows
 
@@ -316,7 +316,73 @@ cd /opt/labremote-controller
 
 Controller akan menampilkan seluruh device yang tersimpan dan menjalankan discovery otomatis pada startup. Gunakan tombol `Discover` untuk memindai ulang.
 
-## 6. Pengujian tanpa shutdown
+### Instalasi cepat controller Windows
+
+Buka PowerShell sebagai Administrator, lalu jalankan:
+
+```powershell
+irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/master/scripts/install-controller.ps1 | iex
+```
+
+Controller dipasang ke `C:\Program Files\OCPHLabRemote\Controller` dan langsung dijalankan.
+
+### Instalasi cepat controller Linux x64
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Ocph23/OcphLabRemote/master/scripts/install-controller.sh \
+  | bash
+export LAB_REMOTE_AGENT_TOKEN='TOKEN_YANG_SAMA_DENGAN_AGENT'
+ocphlabremote
+```
+
+Untuk versi tertentu, berikan tag release sebagai argumen:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Ocph23/OcphLabRemote/master/scripts/install-controller.sh \
+  | bash -s -- v0.1.13
+```
+
+### Uninstall agent Windows
+
+Buka PowerShell sebagai Administrator:
+
+```powershell
+irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/master/scripts/uninstall-agent.ps1 | iex
+```
+
+Perintah tersebut menghentikan dan menghapus service, menghapus rule firewall, serta menghapus file agent. Untuk menghapus token machine juga:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/master/scripts/uninstall-agent.ps1))) -RemoveToken
+```
+
+### Uninstall agent Debian melalui APT
+
+```bash
+sudo systemctl stop ocphlabremote-agent
+sudo apt purge ocphlabremote-agent
+sudo rm -f /etc/apt/sources.list.d/ocphlabremote.list
+sudo rm -f /usr/share/keyrings/ocphlabremote.gpg
+sudo apt update
+```
+
+`apt purge` menghapus paket dan service. File token `/etc/labremote-agent.env` dapat dihapus manual jika masih tersisa:
+
+```bash
+sudo rm -f /etc/labremote-agent.env
+```
+
+### Uninstall agent Debian instalasi manual
+
+```bash
+sudo systemctl disable --now labremote-agent
+sudo rm -f /etc/systemd/system/labremote-agent.service
+sudo systemctl daemon-reload
+sudo rm -rf /opt/labremote-agent
+sudo rm -f /etc/labremote-agent.env
+```
+
+## 7. Pengujian tanpa shutdown
 
 Uji health dari controller:
 
@@ -335,7 +401,7 @@ Invoke-WebRequest `
 
 Respons `400 Bad Request` menunjukkan token diterima dan action `test` ditolak karena memang bukan action valid. Respons `401 Unauthorized` menunjukkan token tidak sama.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 ### Service Linux gagal `203/EXEC`
 

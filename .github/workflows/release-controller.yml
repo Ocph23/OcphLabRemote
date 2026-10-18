@@ -1,0 +1,54 @@
+name: Release Controller
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing release tag, for example v0.1.13
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish controller Windows
+        run: |
+          dotnet publish LabRemote/LabRemote.csproj \
+            -c Release -r win-x64 --self-contained true \
+            -p:PublishSingleFile=true --output artifacts/controller-win-x64
+          cd artifacts/controller-win-x64
+          zip -r ../ocphlabremote-controller-win-x64.zip .
+
+      - name: Publish controller Linux
+        run: |
+          dotnet publish LabRemote/LabRemote.csproj \
+            -c Release -r linux-x64 --self-contained true \
+            -p:PublishSingleFile=true --output artifacts/controller-linux-x64
+          tar -czf artifacts/ocphlabremote-controller-linux-x64.tar.gz \
+            -C artifacts/controller-linux-x64 .
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --title "OCPH LabRemote $RELEASE_TAG" --generate-notes
+          gh release upload "$RELEASE_TAG" \
+            artifacts/ocphlabremote-controller-win-x64.zip \
+            artifacts/ocphlabremote-controller-linux-x64.tar.gz \
+            --clobber
