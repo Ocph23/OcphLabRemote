@@ -55,6 +55,34 @@ Untuk server ARM64 gunakan `linux-arm64`.
 
 ## 3. Instalasi agent di Debian/Linux
 
+### Opsi A — instalasi melalui APT
+
+Cara yang direkomendasikan untuk server Debian/Ubuntu adalah menggunakan repository APT:
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+curl -fsSL https://ocph23.github.io/OcphLabRemote/ocphlabremote-archive-keyring.gpg \
+  | sudo tee /usr/share/keyrings/ocphlabremote.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/ocphlabremote.gpg] https://ocph23.github.io/OcphLabRemote stable main" \
+  | sudo tee /etc/apt/sources.list.d/ocphlabremote.list
+sudo apt update
+sudo apt install ocphlabremote-agent
+```
+
+Paket akan membuat token acak dan service `ocphlabremote-agent` secara otomatis.
+
+Verifikasi instalasi:
+
+```bash
+sudo systemctl status ocphlabremote-agent
+curl http://127.0.0.1:5050/health
+sudo ss -tulpn | grep ':5050'
+sudo cat /etc/labremote-agent.env
+```
+
+### Opsi B — instalasi manual dari hasil publish
+
 Salin hasil publish:
 
 ```bash

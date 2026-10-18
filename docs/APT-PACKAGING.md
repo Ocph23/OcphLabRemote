@@ -67,34 +67,52 @@ tanpa path `./`, file `.deb` harus dipublikasikan ke repository APT internal ata
 sudo apt install ./ocphlabremote-agent_0.1.0_amd64.deb
 ```
 
-## GitHub Pages
+## Repository APT GitHub Pages
 
-Workflow `.github/workflows/publish-apt.yml` membangun dan menerbitkan repository APT ketika tag `v*` dibuat.
+Repository APT yang aktif tersedia di:
+
+```text
+https://ocph23.github.io/OcphLabRemote
+```
+
+Workflow `.github/workflows/publish-apt.yml` membangun dan menerbitkan repository APT ketika tag `v*` dibuat. Versi terakhir yang diterbitkan adalah `0.1.7`.
 
 Siapkan repository GitHub:
 
 1. Buat GPG key khusus repository APT.
 2. Simpan private key ASCII-armored sebagai repository secret `APT_GPG_PRIVATE_KEY`.
-3. Aktifkan GitHub Pages dengan source `GitHub Actions`.
-4. Push tag versi:
+3. Simpan passphrase key sebagai repository secret `APT_GPG_PASSPHRASE`.
+4. Aktifkan GitHub Pages dengan source `GitHub Actions`.
+5. Pada environment `github-pages`, izinkan tag `v*` atau pilih `No restriction`.
+6. Push tag versi:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.8
+git push origin v0.1.8
 ```
 
 Setelah workflow selesai, pasang public key pada Debian:
 
 ```bash
-curl -fsSL https://USERNAME.github.io/REPOSITORY/ocphlabremote-archive-keyring.gpg \
+curl -fsSL https://ocph23.github.io/OcphLabRemote/ocphlabremote-archive-keyring.gpg \
   | sudo tee /usr/share/keyrings/ocphlabremote.gpg >/dev/null
 ```
 
 Tambahkan repository dan instal paket:
 
 ```bash
-echo "deb [signed-by=/usr/share/keyrings/ocphlabremote.gpg] https://USERNAME.github.io/REPOSITORY stable main" \
+echo "deb [signed-by=/usr/share/keyrings/ocphlabremote.gpg] https://ocph23.github.io/OcphLabRemote stable main" \
   | sudo tee /etc/apt/sources.list.d/ocphlabremote.list
 sudo apt update
 sudo apt install ocphlabremote-agent
 ```
+
+Verifikasi agent:
+
+```bash
+sudo systemctl status ocphlabremote-agent
+curl http://127.0.0.1:5050/health
+sudo cat /etc/labremote-agent.env
+```
+
+Token pada `/etc/labremote-agent.env` harus dimasukkan ke controller untuk device tersebut.

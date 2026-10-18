@@ -63,7 +63,12 @@ jobs:
           gpg --batch --export "$KEY_ID" > "$SITE/ocphlabremote-archive-keyring.gpg"
 
           (cd "$SITE" && dpkg-scanpackages pool /dev/null | gzip -9c > dists/stable/main/binary-amd64/Packages.gz)
-          apt-ftparchive release "$SITE/dists/stable" > "$SITE/dists/stable/Release"
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Suite=stable \
+            -o APT::FTPArchive::Release::Codename=stable \
+            -o APT::FTPArchive::Release::Components=main \
+            -o APT::FTPArchive::Release::Architectures=amd64 \
+            release "$SITE/dists/stable" > "$SITE/dists/stable/Release"
           gpg --batch --no-options --no-tty --yes --pinentry-mode loopback \
             --passphrase-file "$RUNNER_TEMP/gpg-passphrase" --local-user "$KEY_ID" \
             --trust-model always --armor --detach-sign \
