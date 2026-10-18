@@ -60,9 +60,11 @@ jobs:
 
           (cd "$SITE" && dpkg-scanpackages pool /dev/null | gzip -9c > dists/stable/main/binary-amd64/Packages.gz)
           apt-ftparchive release "$SITE/dists/stable" > "$SITE/dists/stable/Release"
-          gpg --batch --yes --armor --detach-sign \
+          gpg --batch --no-tty --yes --pinentry-mode loopback --passphrase '' \
+            --armor --detach-sign \
             -o "$SITE/dists/stable/Release.gpg" "$SITE/dists/stable/Release"
-          gpg --batch --yes --clearsign \
+          gpg --batch --no-tty --yes --pinentry-mode loopback --passphrase '' \
+            --clearsign \
             -o "$SITE/dists/stable/InRelease" "$SITE/dists/stable/Release"
 
           cat > "$SITE/index.html" <<'EOF'
