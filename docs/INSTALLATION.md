@@ -170,10 +170,16 @@ sudo ss -tulpn | grep ':5050'
 
 ## 4. Instalasi agent cepat di Windows
 
+Pastikan PowerShell 7 sudah terpasang. Jika belum, pasang melalui winget:
+
+```
+winget install --id Microsoft.Powershell --source winget
+```
+
 Buka PowerShell sebagai Administrator, lalu jalankan:
 
 ```powershell
-irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/main/scripts/install-agent.ps1 | iex
+irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/master/scripts/install-agent.ps1 | iex
 ```
 
 Script akan mengunduh release Windows terbaru, memasang agent ke:
@@ -195,16 +201,45 @@ Invoke-WebRequest http://127.0.0.1:5050/health
 Untuk memasang versi tertentu:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/main/scripts/install-agent.ps1))) -Version v0.1.8
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/master/scripts/install-agent.ps1))) -Version v0.1.8
 ```
 
 Untuk menghapus agent:
 
 ```powershell
-irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/main/scripts/uninstall-agent.ps1 | iex
+irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/master/scripts/uninstall-agent.ps1 | iex
 ```
 
 Tambahkan `-RemoveToken` jika token machine juga ingin dihapus.
+
+## 5. Konfigurasi Wake + Launch
+
+Agent hanya menjalankan aplikasi yang terdaftar pada allowlist `Agent:AllowedApplications`.
+
+Contoh Windows di `appsettings.json`:
+
+```json
+"AllowedApplications": {
+  "notepad": "notepad.exe",
+  "chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+}
+```
+
+Contoh Linux:
+
+```json
+"AllowedApplications": {
+  "browser": "/usr/bin/firefox"
+}
+```
+
+Setelah mengubah konfigurasi Linux:
+
+```bash
+sudo systemctl restart ocphlabremote-agent
+```
+
+Pada TUI, pilih device, tekan `Enter`, lalu pilih `Wake + Launch` dan masukkan alias aplikasi. Controller mengirim Wake-on-LAN, menunggu agent online maksimal 60 detik, lalu memanggil aplikasi tersebut.
 
 ## 4. Instalasi agent di Windows
 

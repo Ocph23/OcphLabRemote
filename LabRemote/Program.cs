@@ -40,6 +40,7 @@ static void RunGroupPage(DeviceContext context)
     var discover = new Button("Discover") { X = 2, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
     var addGroup = new Button("Add group") { X = Pos.Right(discover) + 2, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
     var open = new Button("Open group") { X = Pos.Right(addGroup) + 2, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
+    var showToken = new Button("Show Token") { X = Pos.Right(open) + 2, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
     var quit = new Button("Quit") { X = Pos.AnchorEnd(8), Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
 
     discover.Clicked += () => RunDiscoverPage(context);
@@ -60,7 +61,9 @@ static void RunGroupPage(DeviceContext context)
         }
     };
     quit.Clicked += () => Application.RequestStop();
-    page.Add(groupList, status, discover, addGroup, open, quit);
+    showToken.Clicked += () => ShowTokenDialog(context);
+
+    page.Add(groupList, status, discover, addGroup, open, showToken, quit);
     Application.Run(page);
 }
 
@@ -250,6 +253,9 @@ static string NormalizeMac(string? value)
 
 static async Task RefreshStatusesAsync(ListView list, List<ComputerDevice> computers, Label status)
 {
+
+
+
     using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
     foreach (var computer in computers)
     {
@@ -268,7 +274,9 @@ static async Task RefreshStatusesAsync(ListView list, List<ComputerDevice> compu
     Application.MainLoop.Invoke(() =>
     {
         list.SetSource(DeviceLines(computers));
-        status.Text = $"Status diperbarui: {DateTime.Now:HH:mm:ss} | Total: {computers.Count} perangkat";
+        status.Text = $"Status diperbarui: {DateTime.Now:HH:mm:ss} | Total: {computers.Count} perangkat ";
+
+
     });
 }
 
@@ -339,9 +347,10 @@ static void ShowDeviceContextMenu(DeviceContext context, ListView list, List<Com
 
     var menu = new Dialog($" {selected.Name} ", 36, 12);
     var wake = new Button("Wake") { X = 2, Y = 1, ColorScheme = context.Scheme };
-    var shutdown = new Button("Shutdown") { X = 2, Y = 3, ColorScheme = context.Scheme };
-    var restart = new Button("Restart") { X = 2, Y = 5, ColorScheme = context.Scheme };
-    var cancel = new Button("Cancel") { X = 2, Y = 7, ColorScheme = context.Scheme };
+    var wakeLaunch = new Button("Wake + Launch") { X = 2, Y = 3, ColorScheme = context.Scheme };
+    var shutdown = new Button("Shutdown") { X = 2, Y = 5, ColorScheme = context.Scheme };
+    var restart = new Button("Restart") { X = 2, Y = 7, ColorScheme = context.Scheme };
+    var cancel = new Button("Cancel") { X = 2, Y = 9, ColorScheme = context.Scheme };
 
     wake.Clicked += () =>
     {
@@ -349,11 +358,103 @@ static void ShowDeviceContextMenu(DeviceContext context, ListView list, List<Com
         catch (Exception ex) { status.Text = $"Wake gagal: {ex.Message}"; }
         Application.RequestStop();
     };
+    wakeLaunch.Clicked += () => ShowWakeLaunchDialog(context, selected, status);
     shutdown.Clicked += async () => { await ExecutePowerActionAsync("shutdown", list, computers, status); Application.RequestStop(); };
     restart.Clicked += async () => { await ExecutePowerActionAsync("restart", list, computers, status); Application.RequestStop(); };
     cancel.Clicked += () => Application.RequestStop();
-    menu.Add(new Label("Pilih aksi:") { X = 2, Y = 0, ColorScheme = context.Scheme }, wake, shutdown, restart, cancel);
+    menu.Add(new Label("Pilih aksi:") { X = 2, Y = 0, ColorScheme = context.Scheme }, wake, wakeLaunch, shutdown, restart, cancel);
     Application.Run(menu);
+}
+
+static void ShowTokenDialog(DeviceContext context)
+{
+    var token = Environment.GetEnvironmentVariable("LAB_REMOTE_AGENT_TOKEN") ?? "";
+    var dialog = new Dialog(" AGENT TOKEN ", 82, 11) { ColorScheme = context.Scheme };
+    var value = new Label(string.IsNullOrWhiteSpace(token) ? "Token not found" : token)
+    {
+        X = 2, Y = 2, Width = Dim.Fill(2), ColorScheme = context.Scheme
+    };
+    var copy = new Button("Copy Token") { X = 2, Y = 5, ColorScheme = context.Scheme };
+    var close = new Button("Close") { X = Pos.Right(copy) + 2, Y = 5, ColorScheme = context.Scheme };
+    copy.Clicked += () =>
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            MessageBox.ErrorQuery("Token", "Token tidak ditemukan.", "OK");
+            return;
+        }
+
+        var result = ClipboardHelper.Copy(token);
+        if (result.Success)
+            MessageBox.Query("Token", "Token berhasil disalin ke clipboard.", "OK");
+        else
+            MessageBox.ErrorQuery("Clipboard", result.Message, "OK");
+    };
+    close.Clicked += () => Application.RequestStop();
+    dialog.Add(new Label("Token controller:") { X = 2, Y = 1, ColorScheme = context.Scheme }, value, copy, close);
+    Application.Run(dialog);
+}
+
+static void ShowWakeLaunchDialog(DeviceContext context, ComputerDevice device, Label status)
+{
+    var dialog = new Dialog(" WAKE + LAUNCH ", 62, 11) { ColorScheme = context.Scheme };
+    var alias = new TextField("notepad") { X = 20, Y = 2, Width = 32, ColorScheme = context.Scheme };
+    var launch = new Button("Jalankan") { X = 20, Y = 5, ColorScheme = context.Scheme };
+    var cancel = new Button("Batal") { X = Pos.Right(launch) + 2, Y = 5, ColorScheme = context.Scheme };
+    launch.Clicked += () =>
+    {
+        var name = alias.Text?.ToString()?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(name)) return;
+        Application.RequestStop();
+        _ = WakeAndLaunchAsync(device, name, status);
+    };
+    cancel.Clicked += () => Application.RequestStop();
+    dialog.Add(new Label("Alias aplikasi:") { X = 2, Y = 2, ColorScheme = context.Scheme }, alias, launch, cancel);
+    Application.Run(dialog);
+}
+
+static async Task WakeAndLaunchAsync(ComputerDevice device, string application, Label status)
+{
+    try
+    {
+        WakeOnLan.Send(device.MacAddress, device.IpAddress);
+        device.LastAction = $"wake + {application}...";
+        status.Text = $"Wake dikirim. Menunggu {device.Name} online...";
+
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        var online = false;
+        for (var attempt = 0; attempt < 30; attempt++)
+        {
+            try
+            {
+                using var health = await client.GetAsync($"{device.AgentUrl}/health");
+                if (health.IsSuccessStatusCode) { online = true; break; }
+            }
+            catch { }
+            await Task.Delay(TimeSpan.FromSeconds(2));
+        }
+
+        if (!online)
+        {
+            device.LastAction = "wake online timeout";
+            status.Text = $"{device.Name}: agent belum online setelah 60 detik.";
+            return;
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            $"{device.AgentUrl}/app/launch/{Uri.EscapeDataString(application)}");
+        request.Headers.Add("X-Agent-Token", device.AgentToken);
+        using var response = await client.SendAsync(request);
+        device.LastAction = response.IsSuccessStatusCode
+            ? $"launch {application} OK"
+            : $"launch gagal ({(int)response.StatusCode})";
+        status.Text = $"{device.Name}: {device.LastAction}.";
+    }
+    catch (Exception ex)
+    {
+        device.LastAction = "wake + launch gagal";
+        status.Text = $"{device.Name}: {ex.Message}";
+    }
 }
 
 static void AddGroup(DeviceContext context, ListView list, Label status)
@@ -555,6 +656,52 @@ static void LegacyAddDevice(ListView list, List<ComputerDevice> computers, List<
 }
 #pragma warning restore CS8321
 
+public static class ClipboardHelper
+{
+    public static (bool Success, string Message) Copy(string text)
+    {
+        var candidates = OperatingSystem.IsWindows()
+            ? new[] { (FileName: "clip.exe", Arguments: "") }
+            : OperatingSystem.IsMacOS()
+                ? new[] { (FileName: "pbcopy", Arguments: "") }
+                : new[]
+                {
+                    (FileName: "wl-copy", Arguments: ""),
+                    (FileName: "xclip", Arguments: "-selection clipboard"),
+                    (FileName: "xsel", Arguments: "--clipboard --input")
+                };
+
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = candidate.FileName,
+                    Arguments = candidate.Arguments,
+                    UseShellExecute = false,
+                    RedirectStandardInput = true,
+                    CreateNoWindow = true
+                });
+                if (process is null) continue;
+                process.StandardInput.Write(text);
+                process.StandardInput.Close();
+                process.WaitForExit(3000);
+                if (process.ExitCode == 0)
+                    return (true, "Token berhasil disalin.");
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // Coba utilitas clipboard berikutnya.
+            }
+        }
+
+        return (false, OperatingSystem.IsLinux()
+            ? "Clipboard tidak tersedia. Instal wl-clipboard, xclip, atau xsel."
+            : "Clipboard tidak tersedia pada sistem ini.");
+    }
+}
+
 public sealed class ComputerDevice(string name, string ipAddress, string macAddress, string group)
 {
     public string Name { get; set; } = name;
@@ -565,7 +712,7 @@ public sealed class ComputerDevice(string name, string ipAddress, string macAddr
     public DateTimeOffset? LastSeen { get; set; }
     public string LastAction { get; set; } = "-";
     public string AgentUrl => $"http://{IpAddress}:5050";
-    public string AgentToken => Environment.GetEnvironmentVariable("LAB_REMOTE_AGENT_TOKEN") ?? "653782c74b23e60219aefaf796e41c95ea4f07493b8f1c78282741e10748273d";
+    public string AgentToken => Environment.GetEnvironmentVariable("LAB_REMOTE_AGENT_TOKEN") ?? "change me";
     public string LastSeenText => LastSeen?.ToString("HH:mm:ss") ?? "-";
 }
 

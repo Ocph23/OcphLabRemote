@@ -40,7 +40,13 @@ try {
     Copy-Item (Join-Path $extractPath "*") $InstallDirectory -Recurse -Force
 
     $bytes = New-Object byte[] 32
-    [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
     $token = ([Convert]::ToHexString($bytes)).ToLowerInvariant()
 
     if (-not [Environment]::GetEnvironmentVariable("LAB_REMOTE_AGENT_TOKEN", "Machine")) {
