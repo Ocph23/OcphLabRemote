@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService();
 var token = Environment.GetEnvironmentVariable("LAB_REMOTE_AGENT_TOKEN")
             ?? builder.Configuration["Agent:Token"]
             ?? "change-me";

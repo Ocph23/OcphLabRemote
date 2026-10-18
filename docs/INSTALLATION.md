@@ -168,6 +168,44 @@ curl http://127.0.0.1:5050/health
 sudo ss -tulpn | grep ':5050'
 ```
 
+## 4. Instalasi agent cepat di Windows
+
+Buka PowerShell sebagai Administrator, lalu jalankan:
+
+```powershell
+irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/main/scripts/install-agent.ps1 | iex
+```
+
+Script akan mengunduh release Windows terbaru, memasang agent ke:
+
+```text
+C:\Program Files\OCPHLabRemote\Agent
+```
+
+Script juga membuat token machine, Windows Service `ocphlabremote-agent`, dan rule firewall TCP `5050` untuk profil Domain/Private.
+
+Verifikasi:
+
+```powershell
+Get-Service ocphlabremote-agent
+Invoke-WebRequest http://127.0.0.1:5050/health
+[Environment]::GetEnvironmentVariable("LAB_REMOTE_AGENT_TOKEN", "Machine")
+```
+
+Untuk memasang versi tertentu:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/main/scripts/install-agent.ps1))) -Version v0.1.8
+```
+
+Untuk menghapus agent:
+
+```powershell
+irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/main/scripts/uninstall-agent.ps1 | iex
+```
+
+Tambahkan `-RemoveToken` jika token machine juga ingin dihapus.
+
 ## 4. Instalasi agent di Windows
 
 Buka PowerShell sebagai Administrator. Salin folder publish ke:
