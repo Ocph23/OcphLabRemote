@@ -28,7 +28,7 @@ sudo apt install ./artifacts/deb/ocphlabremote-agent_0.1.0_amd64.deb
 APT akan memasang dependensi, menjalankan post-install script, membuat token acak di `/etc/labremote-agent.env`, dan mengaktifkan service.
 
 ## Verifikasi
-
+ 
 ```bash
 sudo systemctl status ocphlabremote-agent
 curl http://127.0.0.1:5050/health
