@@ -62,7 +62,9 @@ jobs:
           gpg --batch --armor --export "$KEY_ID" > "$SITE/ocphlabremote-archive-key.asc"
           gpg --batch --export "$KEY_ID" > "$SITE/ocphlabremote-archive-keyring.gpg"
 
-          (cd "$SITE" && dpkg-scanpackages pool /dev/null | gzip -9c > dists/stable/main/binary-amd64/Packages.gz)
+          (cd "$SITE" && dpkg-scanpackages pool /dev/null \
+            | tee dists/stable/main/binary-amd64/Packages \
+            | gzip -9c > dists/stable/main/binary-amd64/Packages.gz)
           apt-ftparchive \
             -o APT::FTPArchive::Release::Suite=stable \
             -o APT::FTPArchive::Release::Codename=stable \

@@ -75,7 +75,7 @@ Repository APT yang aktif tersedia di:
 https://ocph23.github.io/OcphLabRemote
 ```
 
-Workflow `.github/workflows/publish-apt.yml` membangun dan menerbitkan repository APT ketika tag `v*` dibuat. Versi terakhir yang diterbitkan adalah `0.1.7`.
+Workflow `.github/workflows/publish-apt.yml` membangun dan menerbitkan repository APT ketika tag `v*` dibuat. Versi terakhir yang diterbitkan adalah `0.1.10`.
 
 Siapkan repository GitHub:
 
