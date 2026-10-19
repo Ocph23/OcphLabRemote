@@ -176,6 +176,13 @@ Pastikan PowerShell 7 sudah terpasang. Jika belum, pasang melalui winget:
 winget install --id Microsoft.Powershell --source winget
 ```
 
+
+Panggil PowerShell 
+
+```powershell
+pwsh
+```
+
 Buka PowerShell sebagai Administrator, lalu jalankan:
 
 ```powershell
@@ -211,8 +218,6 @@ irm https://raw.githubusercontent.com/Ocph23/OcphLabRemote/master/scripts/uninst
 ```
 
 Tambahkan `-RemoveToken` jika token machine juga ingin dihapus.
-
-
 
 
 To open a port in Windows using the terminal, use Windows Terminal or Command Prompt as Administrator. You can open a port using Windows Firewall (netsh).
@@ -270,6 +275,11 @@ sudo systemctl restart ocphlabremote-agent
 Pada TUI, pilih device lalu tekan `Enter`. Gunakan `Wake` untuk menyalakan perangkat. Setelah status berubah menjadi `Online`, pilih `Launch` dan masukkan alias aplikasi.
 
 Pada Windows, agent menggunakan sesi user yang sedang login agar aplikasi GUI tampil di desktop user, bukan hanya berjalan di sesi Windows Service.
+
+Restart Service Agent
+```
+Restart-Service ocphlabremote-agent
+```
 
 ### Instalasi agent manual di Windows
 
