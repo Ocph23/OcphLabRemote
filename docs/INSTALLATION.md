@@ -240,7 +240,7 @@ New-NetFirewallRule -DisplayName "Open Port 5050" -Direction Inbound -Protocol T
 
 
 
-## 5. Konfigurasi Wake + Launch
+## 5. Konfigurasi Wake dan Launch
 
 Agent hanya menjalankan aplikasi yang terdaftar pada allowlist `Agent:AllowedApplications`.
 
@@ -267,7 +267,9 @@ Setelah mengubah konfigurasi Linux:
 sudo systemctl restart ocphlabremote-agent
 ```
 
-Pada TUI, pilih device, tekan `Enter`, lalu pilih `Wake + Launch` dan masukkan alias aplikasi. Controller mengirim Wake-on-LAN, menunggu agent online maksimal 60 detik, lalu memanggil aplikasi tersebut.
+Pada TUI, pilih device lalu tekan `Enter`. Gunakan `Wake` untuk menyalakan perangkat. Setelah status berubah menjadi `Online`, pilih `Launch` dan masukkan alias aplikasi.
+
+Pada Windows, agent menggunakan sesi user yang sedang login agar aplikasi GUI tampil di desktop user, bukan hanya berjalan di sesi Windows Service.
 
 ### Instalasi agent manual di Windows
 

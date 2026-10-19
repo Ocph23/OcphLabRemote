@@ -37,7 +37,7 @@ Saat controller dijalankan, aplikasi menampilkan splash screen:
 SMKN 8 TIK KOTA JAYAPURA
 ```
 
-Setelah splash selesai, aplikasi membuka halaman group. Operator dapat memilih `Discover`, menambahkan group, atau membuka group. Setelah group dipilih, aplikasi membuka halaman daftar device khusus group tersebut. Pada halaman device, `Enter` membuka context menu device dengan aksi `Wake`, `Wake + Launch`, `Shutdown`, `Restart`, dan `Remove`. Menu utama halaman device berisi `Back`, `Add Device`, `Wake All`, `Shutdown All`, `Restart All`, dan `Refresh`.
+Setelah splash selesai, aplikasi membuka halaman group. Operator dapat memilih `Discover`, menambahkan group, atau membuka group. Setelah group dipilih, aplikasi membuka halaman daftar device khusus group tersebut. Pada halaman device, `Enter` membuka context menu device dengan aksi `Wake`, `Launch`, `Shutdown`, `Restart`, dan `Remove`. `Launch` hanya aktif ketika device berstatus `Online`. Menu utama halaman device berisi `Back`, `Add Device`, `Wake All`, `Shutdown All`, `Restart All`, dan `Refresh`.
 
 Tombol `Esc` dapat digunakan sebagai pintasan `Back` pada halaman dan `Batal` pada dialog atau context menu.
 

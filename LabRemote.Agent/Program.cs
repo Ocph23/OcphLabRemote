@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Net.NetworkInformation;
+using System.Runtime.InteropServices;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService();
@@ -69,12 +71,7 @@ app.MapPost("/app/launch/{name}", (string name, HttpRequest request) =>
 
     try
     {
-        Process.Start(new ProcessStartInfo
-        {
-            FileName = executable,
-            UseShellExecute = OperatingSystem.IsWindows(),
-            WorkingDirectory = Path.GetDirectoryName(executable) ?? AppContext.BaseDirectory
-        });
+        InteractiveProcessLauncher.Start(executable);
 
         return Results.Accepted($"/app/launch/{name}", new { application = name, message = "Aplikasi dijalankan." });
     }
@@ -85,3 +82,157 @@ app.MapPost("/app/launch/{name}", (string name, HttpRequest request) =>
 });
 
 app.Run();
+
+static class InteractiveProcessLauncher
+{
+    public static void Start(string executable)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = executable,
+                UseShellExecute = false,
+                WorkingDirectory = Path.GetDirectoryName(executable) ?? AppContext.BaseDirectory
+            });
+            return;
+        }
+
+        StartOnActiveWindowsSession(executable);
+    }
+
+    private static void StartOnActiveWindowsSession(string executable)
+    {
+        var sessionId = WTSGetActiveConsoleSessionId();
+        if (sessionId == uint.MaxValue)
+            throw new InvalidOperationException("Tidak ada user Windows yang sedang login.");
+
+        if (!WTSQueryUserToken(sessionId, out var userToken))
+            ThrowLastError("WTSQueryUserToken");
+
+        try
+        {
+            if (!DuplicateTokenEx(userToken, 0xF01FF, IntPtr.Zero, 2, 1, out var primaryToken))
+                ThrowLastError("DuplicateTokenEx");
+
+            try
+            {
+                if (!CreateEnvironmentBlock(out var environment, primaryToken, false))
+                    ThrowLastError("CreateEnvironmentBlock");
+
+                try
+                {
+                    var startup = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>() };
+                    var commandLine = new StringBuilder($"\"{executable}\"");
+                    var workingDirectory = Path.GetDirectoryName(executable) ?? AppContext.BaseDirectory;
+                    const uint createNewConsole = 0x00000010;
+                    const uint unicodeEnvironment = 0x00000400;
+
+                    if (!CreateProcessAsUser(
+                            primaryToken,
+                            executable,
+                            commandLine,
+                            IntPtr.Zero,
+                            IntPtr.Zero,
+                            false,
+                            createNewConsole | unicodeEnvironment,
+                            environment,
+                            workingDirectory,
+                            ref startup,
+                            out var processInformation))
+                    {
+                        ThrowLastError("CreateProcessAsUser");
+                    }
+
+                    CloseHandle(processInformation.hProcess);
+                    CloseHandle(processInformation.hThread);
+                }
+                finally
+                {
+                    DestroyEnvironmentBlock(environment);
+                }
+            }
+            finally
+            {
+                CloseHandle(primaryToken);
+            }
+        }
+        finally
+        {
+            CloseHandle(userToken);
+        }
+    }
+
+    private static void ThrowLastError(string operation) =>
+        throw new InvalidOperationException($"{operation} gagal: {Marshal.GetLastWin32Error()}");
+
+    [DllImport("kernel32.dll")]
+    private static extern uint WTSGetActiveConsoleSessionId();
+
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    private static extern bool WTSQueryUserToken(uint sessionId, out IntPtr token);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool DuplicateTokenEx(
+        IntPtr existingToken,
+        uint desiredAccess,
+        IntPtr tokenAttributes,
+        int impersonationLevel,
+        int tokenType,
+        out IntPtr primaryToken);
+
+    [DllImport("userenv.dll", SetLastError = true)]
+    private static extern bool CreateEnvironmentBlock(out IntPtr environment, IntPtr token, bool inherit);
+
+    [DllImport("userenv.dll", SetLastError = true)]
+    private static extern bool DestroyEnvironmentBlock(IntPtr environment);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CreateProcessAsUser(
+        IntPtr token,
+        string? applicationName,
+        StringBuilder commandLine,
+        IntPtr processAttributes,
+        IntPtr threadAttributes,
+        bool inheritHandles,
+        uint creationFlags,
+        IntPtr environment,
+        string currentDirectory,
+        ref STARTUPINFO startupInfo,
+        out PROCESS_INFORMATION processInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct STARTUPINFO
+    {
+        public int cb;
+        public string? lpReserved;
+        public string? lpDesktop;
+        public string? lpTitle;
+        public int dwX;
+        public int dwY;
+        public int dwXSize;
+        public int dwYSize;
+        public int dwXCountChars;
+        public int dwYCountChars;
+        public int dwFillAttribute;
+        public int dwFlags;
+        public short wShowWindow;
+        public short cbReserved2;
+        public IntPtr lpReserved2;
+        public IntPtr hStdInput;
+        public IntPtr hStdOutput;
+        public IntPtr hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_INFORMATION
+    {
+        public IntPtr hProcess;
+        public IntPtr hThread;
+        public int processId;
+        public int threadId;
+    }
+}
