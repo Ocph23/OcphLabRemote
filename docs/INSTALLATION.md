@@ -218,22 +218,25 @@ Tambahkan `-RemoveToken` jika token machine juga ingin dihapus.
 To open a port in Windows using the terminal, use Windows Terminal or Command Prompt as Administrator. You can open a port using Windows Firewall (netsh).
 
 1. Open a port using CMD
-For example, to allow incoming TCP traffic on port 8080:
+For example, to allow incoming TCP traffic on port 5050:
 
 
-cmd
+```cmd
 netsh advfirewall firewall add rule name="Open Port 5050" dir=in action=allow protocol=TCP localport=5050
 For UDP instead:
+```
 
-cmd
+
+```cmd
 netsh advfirewall firewall add rule name="Open Port 5050 UDP" dir=in action=allow protocol=UDP localport=5050
+```
 
 2. Open a port using PowerShell
 Run PowerShell as Administrator:
 
-powershell
-New-NetFirewallRule -DisplayName "Open Port 5050" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
-
+```powershell
+New-NetFirewallRule -DisplayName "Open Port 5050" -Direction Inbound -Protocol TCP -LocalPort 5050 -Action Allow
+```
 
 
 

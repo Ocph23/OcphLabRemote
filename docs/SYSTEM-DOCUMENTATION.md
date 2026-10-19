@@ -25,7 +25,7 @@ Sistem ini ditujukan untuk jaringan laboratorium yang dikelola oleh administrato
            +---- UDP broadcast port 7/9
 ```
 
-Controller menjalankan discovery dengan mencoba `GET /health` pada alamat IP host-host di subnet lokal. Hanya komputer yang menjalankan `LabRemote.Agent` dan membuka port `5050` yang akan ditemukan.
+Controller menjalankan discovery dengan melakukan ping ke alamat IP host-host di subnet lokal, lalu mengambil MAC address dan hostname. Controller juga mencoba `GET /health` pada port `5050` untuk membedakan host yang menjalankan `LabRemote.Agent`.
 
 ## 3. Fitur controller
 
@@ -37,7 +37,11 @@ Saat controller dijalankan, aplikasi menampilkan splash screen:
 SMKN 8 TIK KOTA JAYAPURA
 ```
 
-Setelah splash selesai, aplikasi membuka halaman group. Operator dapat memilih `Discover`, menambahkan group, atau membuka group. Setelah group dipilih, aplikasi membuka halaman daftar device khusus group tersebut. Pada halaman device, `Enter` membuka context menu device dengan aksi `Wake`, `Shutdown`, dan `Restart`. Menu utama halaman device berisi `Back`, `Add Device`, `Wake All`, `Shutdown All`, `Restart All`, dan `Refresh`.
+Setelah splash selesai, aplikasi membuka halaman group. Operator dapat memilih `Discover`, menambahkan group, atau membuka group. Setelah group dipilih, aplikasi membuka halaman daftar device khusus group tersebut. Pada halaman device, `Enter` membuka context menu device dengan aksi `Wake`, `Wake + Launch`, `Shutdown`, `Restart`, dan `Remove`. Menu utama halaman device berisi `Back`, `Add Device`, `Wake All`, `Shutdown All`, `Restart All`, dan `Refresh`.
+
+Tombol `Esc` dapat digunakan sebagai pintasan `Back` pada halaman dan `Batal` pada dialog atau context menu.
+
+Pada halaman Discover dan halaman device, tekan `Space` untuk menandai beberapa device. Baris yang sedang dipilih ditampilkan dengan highlight kuning. Tombol `Move group` memindahkan semua device yang ditandai, sedangkan `Remove selected` menghapus semua device yang ditandai setelah konfirmasi. Pada halaman device, tombol `Delete` juga dapat digunakan untuk menghapus pilihan.
 
 ### 3.1 Daftar device
 
@@ -51,7 +55,9 @@ Daftar device ditampilkan otomatis saat aplikasi dibuka. Informasi yang ditampil
 
 ### 3.2 Group
 
-Device baru dapat diberi group seperti `Lab 1`, `Lab 2`, atau `Server`. Gunakan tombol `Add group` untuk membuat group baru dan `Move group` untuk memindahkan device yang sedang dipilih, termasuk device dari group `Discovered`.
+Device baru dapat diberi group seperti `Lab 1`, `Lab 2`, atau `Server`. Gunakan tombol `Add group` untuk membuat group baru, `Remove group` untuk menghapus group kosong, dan `Move group` untuk memindahkan device yang sedang dipilih, termasuk device dari group `Discovered`.
+
+Gunakan `Remove` pada context menu untuk menghapus device dari `devices.json`. Penghapusan memerlukan konfirmasi dan tidak menghapus group.
 
 Group dan device disimpan bersama dalam `devices.json`, sehingga perubahan tetap ada saat controller dijalankan kembali.
 
@@ -66,7 +72,7 @@ Controller memanggil endpoint `/health` setiap lima detik. Status yang ditampilk
 
 ### 3.4 Discovery
 
-Tombol `Discover` memindai host dalam subnet IPv4 lokal. Implementasi saat ini mendukung subnet sampai 4096 host dan menggunakan port TCP `5050`.
+Tombol `Discover` memindai host aktif dalam subnet IPv4 lokal. Untuk setiap host, controller mencoba mengambil MAC address melalui `SendARP` pada Windows atau tabel neighbor `ip neigh` pada Linux, kemudian melakukan resolusi hostname dan pemeriksaan agent pada port TCP `5050`.
 
 Discovery tidak dapat menemukan komputer yang sedang mati. Komputer yang sudah pernah diketahui tetap dapat dibangunkan melalui MAC address menggunakan Wake-on-LAN.
 
@@ -164,7 +170,7 @@ File ini dapat dicadangkan, tetapi token tidak disimpan di dalamnya. Token dibac
 
 ## 6. Batasan
 
-- Discovery hanya menemukan agent pada subnet lokal yang dapat dijangkau.
+- Discovery hanya menemukan host aktif pada subnet lokal yang dapat dijangkau; host tanpa agent tetap dapat tampil dengan status offline.
 - Komputer mati tidak dapat ditemukan melalui `/health`.
 - Wake-on-LAN tidak bekerja jika komputer kehilangan daya, NIC tidak mendukung WoL, atau broadcast diblokir jaringan.
 - Implementasi directed broadcast saat ini mengasumsikan subnet `/24`.
