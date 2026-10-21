@@ -3,9 +3,14 @@ using System.Net.Http.Json;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Reflection;
 using System.Text.Json;
 using System.Collections.ObjectModel;
-using Terminal.Gui;
+using Terminal.Gui.App;
+using Terminal.Gui.Drawing;
+using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
+using Terminal.Gui.Views;
 
 
 
@@ -68,9 +73,12 @@ static async Task<string> GetHostNameAsync(string ipAddress)
     }
 }
 
+static string GetAppVersion() =>
+    Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.1.19";
+
 Application.Init();
 
-var midnightNeon = new ColorScheme
+var midnightNeon = new Scheme
 {
     Normal = Application.Driver.MakeAttribute(new Color(222, 232, 240), new Color(11, 18, 32)),
     Focus = Application.Driver.MakeAttribute(new Color(11, 18, 32), new Color(244, 114, 182)),
@@ -84,13 +92,21 @@ ShowSplash(midnightNeon);
 RunGroupPage(context);
 Application.Shutdown();
 
-static void ShowSplash(ColorScheme scheme)
+static void ShowSplash(Scheme scheme)
 {
-    var splash = new Window(" SYSTEM BOOT ") { Width = 54, Height = 10, ColorScheme = scheme };
+    var splash = new Window(" SYSTEM BOOT ")
+    {
+        X = Pos.Center(),
+        Y = Pos.Center(),
+        Width = 54,
+        Height = 10,
+        Scheme = scheme
+    };
     splash.Add(
-        new Label("SMKN 8 TIK KOTA JAYAPURA") { X = 8, Y = 2, ColorScheme = scheme },
-        new Label("OCPH23-LABREMOTE // NETWORK CONTROL") { X = 8, Y = 4, ColorScheme = scheme },
-        new Label("INITIALIZING...") { X = 8, Y = 6, ColorScheme = scheme });
+        new Label("SMKN 8 TIK KOTA JAYAPURA") { X = 8, Y = 2, Scheme = scheme },
+        new Label("OCPH23-LABREMOTE // NETWORK CONTROL") { X = 8, Y = 4, Scheme = scheme },
+        new Label($"VERSION {GetAppVersion()}") { X = 8, Y = 6, Scheme = scheme },
+        new Label("INITIALIZING...") { X = 8, Y = 7, Scheme = scheme });
     Application.MainLoop.AddTimeout(TimeSpan.FromSeconds(3), _ => { Application.RequestStop(); return false; });
     Application.Run(splash);
 }
@@ -107,28 +123,20 @@ static void EnableEscape(View view, Action action)
     };
 }
 
+static MenuItem MenuAction(string title, Action action, Key? shortcut = null) =>
+    shortcut is { } key ? new MenuItem(title, key, action) : new MenuItem(title, Key.Empty, action);
+
 static void RunGroupPage(DeviceContext context)
 {
-    var page = new Window(" SELECT GROUP ") { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), ColorScheme = context.Scheme };
-    var groupList = new ListView(context.Config.Groups) { X = 2, Y = 2, Width = Dim.Fill(4), Height = Dim.Fill(7), ColorScheme = context.Scheme };
-    var status = new Label("Pilih group untuk melihat perangkat.") { X = 2, Y = Pos.AnchorEnd(5), Width = Dim.Fill(2), ColorScheme = context.Scheme };
-    var discover = new Button("Discover") { X = 2, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
-    var addGroup = new Button("Add group") { X = Pos.Right(discover) + 2, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
-    var removeGroup = new Button("Remove group") { X = Pos.Right(addGroup) + 2, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
-    var open = new Button("Open group") { X = Pos.Right(removeGroup) + 2, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
-    var showToken = new Button("Show Token") { X = Pos.Right(open) + 2, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
-    var quit = new Button("Quit") { X = Pos.AnchorEnd(8), Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
-
-    discover.Accepting += (_, _) => RunDiscoverPage(context);
-    addGroup.Accepting += (_, _) => AddGroup(context, groupList, status);
-    removeGroup.Accepting += (_, _) => RemoveGroup(context, groupList, status);
+    var page = new Window(" SELECT GROUP ") { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), Scheme = context.Scheme };
+    var groupList = new ListView(context.Config.Groups) { X = 2, Y = 2, Width = Dim.Fill(4), Height = Dim.Fill(2), Scheme = context.Scheme };
+    var status = new Label("Pilih group untuk melihat perangkat.") { X = 2, Y = Pos.AnchorEnd(1), Width = Dim.Fill(2), Scheme = context.Scheme };
     Action openSelectedGroup = () =>
     {
-        var index = groupList.SelectedItem;
+        var index = groupList.SelectedItem ?? -1;
         if (index >= 0 && index < context.Config.Groups.Count)
             RunDevicePage(context, context.Config.Groups[index]);
     };
-    open.Accepting += (_, _) => openSelectedGroup();
     groupList.KeyDown += (s, args) =>
     {
         if (args == Key.Enter)
@@ -137,11 +145,22 @@ static void RunGroupPage(DeviceContext context)
             args.Handled = true;
         }
     };
-    quit.Accepting += (_, _) => ConfirmQuit();
-    showToken.Accepting += (_, _) => ShowTokenDialog(context);
     EnableEscape(page, ConfirmQuit);
 
-    page.Add(groupList, status, discover, addGroup, removeGroup, open, showToken, quit);
+    var menu = new MenuBar([
+        new MenuBarItem("_Group", [
+            MenuAction("_Open group", openSelectedGroup),
+            MenuAction("_Add group", () => AddGroup(context, groupList, status)),
+            MenuAction("_Remove group", () => RemoveGroup(context, groupList, status))
+        ]),
+        new MenuBarItem("_Discover", [MenuAction("Open discover", () => RunDiscoverPage(context))]),
+        new MenuBarItem("_Application", [
+            MenuAction("_Show Token", () => ShowTokenDialog(context)),
+            MenuAction("_Quit", ConfirmQuit)
+        ])
+    ]);
+
+    page.Add(menu, groupList, status);
     Application.Run(page);
 }
 
@@ -193,7 +212,7 @@ static int Confirm(string title, string message, params string[] buttons)
 
 static void RemoveGroup(DeviceContext context, ListView list, Label status)
 {
-    var index = list.SelectedItem;
+    var index = list.SelectedItem ?? -1;
     if (index < 0 || index >= context.Config.Groups.Count)
     {
         status.Text = "Pilih group terlebih dahulu.";
@@ -234,38 +253,42 @@ static void RunDiscoverPage(DeviceContext context)
     if (!context.Config.Groups.Contains("Discovered")) context.Config.Groups.Add("Discovered");
     context.CurrentGroup = "Discovered";
     var devices = context.VisibleDevices;
-    var page = new Window(" DISCOVER LOCAL NETWORK ") { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), ColorScheme = context.Scheme };
+    var page = new Window(" DISCOVER LOCAL NETWORK ") { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), Scheme = context.Scheme };
     var list = new ListView(DeviceLines(devices))
     {
         X = 1,
         Y = 1,
         Width = Dim.Fill(1),
-        Height = Dim.Fill(6),
-        ColorScheme = context.Scheme,
-        AllowsMarking = true,
-        AllowsMultipleSelection = true
+        Height = Dim.Fill(2),
+        Scheme = context.Scheme,
+        ShowMarks = true,
+        MarkMultiple = true
     };
     ConfigureDeviceListColors(list, () => context.VisibleDevices);
-    var status = new Label("Space: pilih device | Move group: pindahkan pilihan") { X = 1, Y = Pos.AnchorEnd(5), Width = Dim.Fill(1), ColorScheme = context.Scheme };
-    var scan = new Button("Scan now") { X = 1, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
-    var move = new Button("Move group") { X = Pos.Right(scan) + 1, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
-    var remove = new Button("Remove selected") { X = Pos.Right(move) + 1, Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
-    var back = new Button("Back") { X = Pos.AnchorEnd(8), Y = Pos.AnchorEnd(3), ColorScheme = context.Scheme };
-    scan.Accepting += async (_, _) => await DiscoverDevicesAsync(context, list, status);
-    move.Accepting += (_, _) => MoveSelectedDevices(context, list, status);
-    remove.Accepting += (_, _) => RemoveSelectedDevices(context, list, status);
-    back.Accepting += (_, _) => Application.RequestStop();
+    var status = new Label("Space: pilih device | Move group: pindahkan pilihan") { X = 1, Y = Pos.AnchorEnd(1), Width = Dim.Fill(1), Scheme = context.Scheme };
     list.KeyDown += (s, args) =>
     {
         if (args == Key.Space)
         {
+            var selectedIndex = list.SelectedItem;
             list.MarkUnmarkSelectedItem();
+            list.SetSource(DeviceLines(context.VisibleDevices));
+            if (selectedIndex is int index && index >= 0 && index < context.VisibleDevices.Count)
+                list.SelectedItem = index;
             status.Text = $"Terpilih: {MarkedDevices(list, context.VisibleDevices).Count} device | Space: pilih/batal pilih";
             args.Handled = true;
         }
     };
     EnableEscape(page, () => Application.RequestStop());
-    page.Add(list, status, scan, move, remove, back);
+    var menu = new MenuBar([
+        new MenuBarItem("_Discover", [
+            MenuAction("_Scan now", () => _ = DiscoverDevicesAsync(context, list, status)),
+            MenuAction("_Move group", () => MoveSelectedDevices(context, list, status)),
+            MenuAction("_Remove selected", () => RemoveSelectedDevices(context, list, status))
+        ]),
+        new MenuBarItem("_Navigation", [MenuAction("Back", () => Application.RequestStop())])
+    ]);
+    page.Add(menu, list, status);
     _ = DiscoverDevicesAsync(context, list, status);
     Application.Run(page);
 }
@@ -275,43 +298,32 @@ static void RunDevicePage(DeviceContext context, string group)
     context.Reload();
     context.CurrentGroup = group;
     var computers = context.VisibleDevices;
-    var page = new Window($" {group.ToUpperInvariant()} // DEVICES ") { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), ColorScheme = context.Scheme };
+    var page = new Window($" {group.ToUpperInvariant()} // DEVICES ") { X = 0, Y = 0, Width = Dim.Fill(), Height = Dim.Fill(), Scheme = context.Scheme };
     var list = new ListView(DeviceLines(computers))
     {
         X = 1,
-        Y = 1,
+        Y = 2,
         Width = Dim.Fill(1),
-        Height = Dim.Fill(7),
-        ColorScheme = context.Scheme,
-        AllowsMarking = true,
-        AllowsMultipleSelection = true
+        Height = Dim.Fill(2),
+        Scheme = context.Scheme,
+        ShowMarks = true,
+        MarkMultiple = true
     };
     ConfigureDeviceListColors(list, () => computers);
-    var status = new Label($"{group}: {computers.Count} device") { X = 1, Y = Pos.AnchorEnd(6), Width = Dim.Fill(1), ColorScheme = context.Scheme };
-    var back = new Button("Back") { X = 1, Y = Pos.AnchorEnd(4), ColorScheme = context.Scheme };
-    var add = new Button("Add device") { X = Pos.Right(back) + 1, Y = Pos.AnchorEnd(4), ColorScheme = context.Scheme };
-    var wakeAll = new Button("Wake All") { X = Pos.Right(add) + 1, Y = Pos.AnchorEnd(4), ColorScheme = context.Scheme };
-    var launchAll = new Button("Launch All") { X = Pos.Right(wakeAll) + 1, Y = Pos.AnchorEnd(4), ColorScheme = context.Scheme };
-    var shutdownAll = new Button("Shutdown All") { X = Pos.Right(launchAll) + 1, Y = Pos.AnchorEnd(4), ColorScheme = context.Scheme };
-    var restartAll = new Button("Restart All") { X = Pos.Right(shutdownAll) + 1, Y = Pos.AnchorEnd(4), ColorScheme = context.Scheme };
-    var refresh = new Button("Refresh") { X = Pos.Right(restartAll) + 1, Y = Pos.AnchorEnd(4), ColorScheme = context.Scheme };
-    var removeSelected = new Button("Remove selected") { X = Pos.Right(refresh) + 1, Y = Pos.AnchorEnd(4), ColorScheme = context.Scheme };
+    var status = new Label($"{group}: {computers.Count} device") { X = 1, Y = Pos.AnchorEnd(1), Width = Dim.Fill(1), Scheme = context.Scheme };
     var active = true;
 
-    back.Accepting += (_, _) => { active = false; Application.RequestStop(); };
-    add.Accepting += (_, _) => AddDevice(context, list, status);
     Action refreshStatus = () => _ = RefreshStatusesAsync(list, computers, status);
-    refresh.Accepting += (_, _) => refreshStatus();
-    wakeAll.Accepting += (_, _) => WakeAll(computers, status);
-    launchAll.Accepting += (_, _) => ShowLaunchAllDialog(context, computers, list, status);
-    shutdownAll.Accepting += async (_, _) => await ExecutePowerActionAllAsync("shutdown", computers, list, status);
-    restartAll.Accepting += async (_, _) => await ExecutePowerActionAllAsync("restart", computers, list, status);
-    removeSelected.Accepting += (_, _) => RemoveSelectedDevices(context, list, status);
+
     list.KeyDown += (s, args) =>
     {
         if (args == Key.Space)
         {
+            var selectedIndex = list.SelectedItem;
             list.MarkUnmarkSelectedItem();
+            list.SetSource(DeviceLines(computers));
+            if (selectedIndex is int index && index >= 0 && index < computers.Count)
+                list.SelectedItem = index;
             status.Text = $"Terpilih: {MarkedDevices(list, computers).Count} device | Space: pilih/batal pilih";
             args.Handled = true;
             return;
@@ -334,6 +346,15 @@ static void RunDevicePage(DeviceContext context, string group)
             args.Handled = true;
         }
     };
+    list.MouseEvent += (s, mouse) =>
+    {
+        if (mouse.Flags.HasFlag(MouseFlags.RightButtonClicked) ||
+            mouse.Flags.HasFlag(MouseFlags.LeftButtonDoubleClicked))
+        {
+            ShowDeviceContextMenu(context, list, computers, status);
+            mouse.Handled = true;
+        }
+    };
     page.KeyDown += (s, args) =>
     {
         if (args == (Key.F.WithAlt))
@@ -343,21 +364,40 @@ static void RunDevicePage(DeviceContext context, string group)
         }
     };
     EnableEscape(page, () => { active = false; Application.RequestStop(); });
-    page.Add(list, status, back, add, wakeAll, launchAll, shutdownAll, restartAll, refresh, removeSelected);
-    Application.MainLoop.AddTimeout(TimeSpan.FromSeconds(5), _timer => { if (!active) return false; _ = RefreshStatusesAsync(list, context.VisibleDevices, status); return true; });
+    var menu = new MenuBar([
+        new MenuBarItem("_Navigation", [
+            MenuAction("_Back", () => { active = false; Application.RequestStop(); })
+        ]),
+        new MenuBarItem("_Device", [
+            MenuAction("_Add device", () => AddDevice(context, list, status)),
+            MenuAction("_Remove selected", () => RemoveSelectedDevices(context, list, status))
+        ]),
+        new MenuBarItem("_Power", [
+            MenuAction("_Wake All", () => WakeAll(computers, status)),
+            MenuAction("_Launch All", () => ShowLaunchAllDialog(context, computers, list, status)),
+            MenuAction("_Shutdown All", () => _ = ExecutePowerActionAllAsync("shutdown", computers, list, status)),
+            MenuAction("_Restart All", () => _ = ExecutePowerActionAllAsync("restart", computers, list, status))
+        ]),
+        new MenuBarItem("_View", [MenuAction("Refresh", refreshStatus, Key.F.WithAlt)])
+    ]);
+    page.Add(menu, list, status);
+    Application.MainLoop.AddTimeout(TimeSpan.FromSeconds(5), _timer => { if (!active) return false; _ = RefreshStatusesAsync(list, context.VisibleDevices, status); return true;
+    });
+
     Application.Run(page);
 }
 
 static string[] DeviceLines(List<ComputerDevice> computers) => computers
-    .Select(c => $"{StatusIndicator(c.Status)} [{c.Group,-8}] {c.Name,-16} {c.IpAddress,-15} {c.MacAddress,-17} {c.Status,-8} {c.LastSeenText}")
+    .Select(c => $"{StatusIndicator(c.Status)}[{c.Group,-8}] {c.Name,-16} {c.IpAddress,-15} {c.MacAddress,-17} {c.Status,-8} {c.LastSeenText}")
     .ToArray();
 
 static string StatusIndicator(string status) => status switch
 {
-    "Online" => "[ON] ",
-    "Offline" => "[OFF]",
-    "Error" => "[ERR]",
-    _ => "[ ? ]"
+    "Online" => "● ",
+    "Offline" => "○ ",
+    "Error" => "× ",
+    "Wait" => "… ",
+    _ => "? "
 };
 
 static void ConfigureDeviceListColors(ListView list, Func<List<ComputerDevice>> getDevices)
@@ -372,17 +412,18 @@ static void ConfigureDeviceListColors(ListView list, Func<List<ComputerDevice>> 
     };
 }
 
-static Terminal.Gui.Attribute StatusAttribute(string status) => status switch
+static Terminal.Gui.Drawing.Attribute StatusAttribute(string status) => status switch
 {
     "Online" => Application.Driver.MakeAttribute(new Color(74, 222, 128), new Color(11, 18, 32)),
     "Offline" => Application.Driver.MakeAttribute(new Color(148, 163, 184), new Color(11, 18, 32)),
     "Error" => Application.Driver.MakeAttribute(new Color(248, 113, 113), new Color(11, 18, 32)),
+    "Wait" => Application.Driver.MakeAttribute(new Color(250, 204, 21), new Color(11, 18, 32)),
     _ => Application.Driver.MakeAttribute(new Color(250, 204, 21), new Color(11, 18, 32))
 };
 
 static ComputerDevice? SelectedDevice(ListView list, List<ComputerDevice> computers)
 {
-    var index = list.SelectedItem;
+    var index = list.SelectedItem ?? -1;
     return index >= 0 && index < computers.Count ? computers[index] : null;
 }
 
@@ -484,37 +525,47 @@ static string NormalizeMac(string? value)
 
 static async Task RefreshStatusesAsync(ListView list, List<ComputerDevice> computers, Label status)
 {
-    using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-    bool isChange = false;
-    foreach (var computer in computers)
-    {
-        try
-        {
-            using var response = await client.GetAsync($"{computer.AgentUrl}/health");
-            var newStatus = response.IsSuccessStatusCode ? "Online" : "Error";
-            if (computer.Status != newStatus)
-            {
-                computer.Status = newStatus;
-                isChange = true;
-            }
-            computer.LastSeen = DateTimeOffset.Now;
-        }
-        catch
-        {
-            computer.Status = "Offline";
-        }
-    }
+    // Hindari timer memulai refresh baru sebelum refresh sebelumnya selesai.
+    if (!StatusRefreshGate.TryEnter()) return;
 
-
-    if (isChange)
+    try
     {
+        var snapshot = computers.ToArray();
+        if (snapshot.Length == 0) return;
+
+        var results = await StatusRefreshGate.ProbeAsync(snapshot);
+
+        // Seluruh perubahan view dilakukan di main loop Terminal.Gui.
         Application.MainLoop.Invoke(() =>
         {
-            list.SetSource(DeviceLines(computers));
-            status.Text = $"Status diperbarui: {DateTime.Now:HH:mm:ss} | Total: {computers.Count} perangkat ";
+            var statusChanged = false;
+            foreach (var result in results)
+            {
+                if (!string.Equals(result.Device.Status, result.Status, StringComparison.OrdinalIgnoreCase))
+                    statusChanged = true;
+
+                result.Device.Status = result.Status;
+                if (result.LastSeen is not null)
+                    result.Device.LastSeen = result.LastSeen;
+            }
+
+            // Jangan mengganti source jika status tidak berubah karena SetSource
+            // dapat mengganggu posisi cursor/fokus pada ListView.
+            if (statusChanged)
+            {
+                var selectedIndex = list.SelectedItem;
+                list.SetSource(DeviceLines(computers));
+                if (selectedIndex is int index && index >= 0 && index < computers.Count)
+                    list.SelectedItem = index;
+
+                status.Text = $"Status berubah: {DateTime.Now:HH:mm:ss} | Total: {computers.Count} perangkat";
+            }
         });
     }
-
+    finally
+    {
+        StatusRefreshGate.Exit();
+    }
 }
 
 static async Task ExecutePowerActionAsync(string action, ListView list, List<ComputerDevice> computers, Label status)
@@ -525,6 +576,11 @@ static async Task ExecutePowerActionAsync(string action, ListView list, List<Com
     var answer = Confirm("Konfirmasi", $"{action} {selected.Name}?", "Ya", "Batal");
     if (answer != 0) { status.Text = "Operasi dibatalkan."; return; }
 
+    selected.Status = "Wait";
+    selected.LastAction = $"{action} menunggu status baru";
+    list.SetSource(DeviceLines(computers));
+    status.Text = $"{selected.Name}: menunggu status baru setelah {action}.";
+
     try
     {
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
@@ -532,12 +588,11 @@ static async Task ExecutePowerActionAsync(string action, ListView list, List<Com
         request.Headers.Add("X-Agent-Token", selected.AgentToken);
         using var response = await client.SendAsync(request);
         selected.LastAction = response.IsSuccessStatusCode ? $"{action} OK" : $"{action} gagal ({(int)response.StatusCode})";
-        status.Text = $"{selected.Name}: {selected.LastAction}";
-        list.SetSource(DeviceLines(computers));
+        status.Text = $"{selected.Name}: {selected.LastAction}. Status perangkat menunggu pemeriksaan berikutnya.";
     }
     catch (Exception ex)
     {
-        selected.Status = "Offline";
+        // Pertahankan Wait sampai health check berikutnya memberikan status baru.
         status.Text = $"{selected.Name}: {ex.Message}";
     }
 }
@@ -559,6 +614,14 @@ static async Task ExecutePowerActionAllAsync(string action, List<ComputerDevice>
     var answer = Confirm("Konfirmasi", $"{action} semua {computers.Count} device?", "Ya", "Batal");
     if (answer != 0) { status.Text = "Operasi dibatalkan."; return; }
 
+    foreach (var computer in computers)
+    {
+        computer.Status = "Wait";
+        computer.LastAction = $"{action} menunggu status baru";
+    }
+    list.SetSource(DeviceLines(computers));
+    status.Text = $"{action}: menunggu status baru dari {computers.Count} device.";
+
     using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
     var success = 0;
     foreach (var computer in computers)
@@ -574,7 +637,7 @@ static async Task ExecutePowerActionAllAsync(string action, List<ComputerDevice>
         catch { computer.LastAction = $"{action} offline"; }
     }
     list.SetSource(DeviceLines(computers));
-    status.Text = $"{action}: {success}/{computers.Count} agent menerima perintah.";
+    status.Text = $"{action}: {success}/{computers.Count} agent menerima perintah. Menunggu status baru.";
 }
 
 static void ShowDeviceContextMenu(DeviceContext context, ListView list, List<ComputerDevice> computers, Label status)
@@ -582,29 +645,27 @@ static void ShowDeviceContextMenu(DeviceContext context, ListView list, List<Com
     var selected = SelectedDevice(list, computers);
     if (selected is null) { status.Text = "Pilih device terlebih dahulu."; return; }
 
-    var menu = new Dialog($" {selected.Name} ", 40, 14);
-    var wake = new Button("Wake") { X = 2, Y = 1, ColorScheme = context.Scheme };
-    var launch = new Button("Launch") { X = 2, Y = 3, ColorScheme = context.Scheme };
-    launch.Enabled = string.Equals(selected.Status, "Online", StringComparison.OrdinalIgnoreCase);
-    var shutdown = new Button("Shutdown") { X = 2, Y = 5, ColorScheme = context.Scheme };
-    var restart = new Button("Restart") { X = 2, Y = 7, ColorScheme = context.Scheme };
-    var remove = new Button("Remove") { X = 2, Y = 9, ColorScheme = context.Scheme };
-    var cancel = new Button("Cancel") { X = 2, Y = 11, ColorScheme = context.Scheme };
+    var menu = new PopoverMenu([
+        MenuAction("Wake", () =>
+        {
+            try { WakeOnLan.Send(selected.MacAddress, selected.IpAddress); selected.LastAction = "wake OK"; status.Text = $"Wake dikirim ke {selected.Name}."; }
+            catch (Exception ex) { status.Text = $"Wake gagal: {ex.Message}"; }
+        }),
+        MenuAction("Launch", () =>
+        {
+            if (string.Equals(selected.Status, "Online", StringComparison.OrdinalIgnoreCase))
+                ShowLaunchDialog(context, selected, list, computers, status);
+            else
+                status.Text = "Launch hanya tersedia untuk device Online.";
+        }),
+        MenuAction("Shutdown", async () => await ExecutePowerActionAsync("shutdown", list, computers, status)),
+        MenuAction("Restart", async () => await ExecutePowerActionAsync("restart", list, computers, status)),
+        MenuAction("Remove", () => RemoveDevice(context, selected, list, computers, status)),
+        MenuAction("Cancel", () => { })
+    ]);
 
-    wake.Accepting += (_, _) =>
-    {
-        try { WakeOnLan.Send(selected.MacAddress, selected.IpAddress); selected.LastAction = "wake OK"; status.Text = $"Wake dikirim ke {selected.Name}."; }
-        catch (Exception ex) { status.Text = $"Wake gagal: {ex.Message}"; }
-        Application.RequestStop();
-    };
-    launch.Accepting += (_, _) => ShowLaunchDialog(context, selected, status);
-    shutdown.Accepting += async (_, _) => { await ExecutePowerActionAsync("shutdown", list, computers, status); Application.RequestStop(); };
-    restart.Accepting += async (_, _) => { await ExecutePowerActionAsync("restart", list, computers, status); Application.RequestStop(); };
-    remove.Accepting += (_, _) => RemoveDevice(context, selected, list, computers, status);
-    cancel.Accepting += (_, _) => Application.RequestStop();
-    EnableEscape(menu, () => Application.RequestStop());
-    menu.Add(new Label("Pilih aksi:") { X = 2, Y = 0, ColorScheme = context.Scheme }, wake, launch, shutdown, restart, remove, cancel);
-    Application.Run(menu);
+    Application.Popovers?.Register(menu);
+    Application.Popovers?.Show(menu);
 }
 
 static void RemoveDevice(DeviceContext context, ComputerDevice device, ListView list, List<ComputerDevice> computers, Label status)
@@ -623,16 +684,16 @@ static void RemoveDevice(DeviceContext context, ComputerDevice device, ListView 
 static void ShowTokenDialog(DeviceContext context)
 {
     var token = Environment.GetEnvironmentVariable("LAB_REMOTE_AGENT_TOKEN") ?? "";
-    var dialog = new Dialog(" AGENT TOKEN ", 82, 11) { ColorScheme = context.Scheme };
+    var dialog = new Dialog(" AGENT TOKEN ", 82, 11) { Scheme = context.Scheme };
     var value = new Label(string.IsNullOrWhiteSpace(token) ? "Token not found" : token)
     {
         X = 2,
         Y = 2,
         Width = Dim.Fill(2),
-        ColorScheme = context.Scheme
+        Scheme = context.Scheme
     };
-    var copy = new Button("Copy Token") { X = 2, Y = 5, ColorScheme = context.Scheme };
-    var close = new Button("Close") { X = Pos.Right(copy) + 2, Y = 5, ColorScheme = context.Scheme };
+    var copy = new Button("Copy Token") { X = 2, Y = 5, Scheme = context.Scheme };
+    var close = new Button("Close") { X = Pos.Right(copy) + 2, Y = 5, Scheme = context.Scheme };
     copy.Accepting += (_, _) =>
     {
         if (string.IsNullOrWhiteSpace(token))
@@ -649,11 +710,11 @@ static void ShowTokenDialog(DeviceContext context)
     };
     close.Accepting += (_, _) => Application.RequestStop();
     EnableEscape(dialog, () => Application.RequestStop());
-    dialog.Add(new Label("Token controller:") { X = 2, Y = 1, ColorScheme = context.Scheme }, value, copy, close);
+    dialog.Add(new Label("Token controller:") { X = 2, Y = 1, Scheme = context.Scheme }, value, copy, close);
     Application.Run(dialog);
 }
 
-static void ShowLaunchDialog(DeviceContext context, ComputerDevice device, Label status)
+static void ShowLaunchDialog(DeviceContext context, ComputerDevice device, ListView list, List<ComputerDevice> computers, Label status)
 {
     if (!string.Equals(device.Status, "Online", StringComparison.OrdinalIgnoreCase))
     {
@@ -661,25 +722,30 @@ static void ShowLaunchDialog(DeviceContext context, ComputerDevice device, Label
         return;
     }
 
-    var dialog = new Dialog(" LAUNCH APPLICATION ", 62, 11) { ColorScheme = context.Scheme };
-    var alias = new TextField("notepad") { X = 20, Y = 2, Width = 32, ColorScheme = context.Scheme };
-    var launch = new Button("Jalankan") { X = 20, Y = 5, ColorScheme = context.Scheme };
-    var cancel = new Button("Batal") { X = Pos.Right(launch) + 2, Y = 5, ColorScheme = context.Scheme };
+    var dialog = new Dialog(" LAUNCH APPLICATION ", 62, 11) { Scheme = context.Scheme };
+    var alias = new TextField("notepad") { X = 20, Y = 2, Width = 32, Scheme = context.Scheme };
+    var launch = new Button("Jalankan") { X = 20, Y = 5, Scheme = context.Scheme };
+    var cancel = new Button("Batal") { X = Pos.Right(launch) + 2, Y = 5, Scheme = context.Scheme };
     launch.Accepting += (_, _) =>
     {
         var name = alias.Text?.ToString()?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(name)) return;
         Application.RequestStop();
-        _ = LaunchApplicationAsync(device, name, status);
+        _ = LaunchApplicationAsync(device, name, list, computers, status);
     };
     cancel.Accepting += (_, _) => Application.RequestStop();
     EnableEscape(dialog, () => Application.RequestStop());
-    dialog.Add(new Label("Alias aplikasi:") { X = 2, Y = 2, ColorScheme = context.Scheme }, alias, launch, cancel);
+    dialog.Add(new Label("Alias aplikasi:") { X = 2, Y = 2, Scheme = context.Scheme }, alias, launch, cancel);
     Application.Run(dialog);
 }
 
-static async Task LaunchApplicationAsync(ComputerDevice device, string application, Label status)
+static async Task LaunchApplicationAsync(ComputerDevice device, string application, ListView list, List<ComputerDevice> computers, Label status)
 {
+    device.Status = "Wait";
+    device.LastAction = $"launch {application} menunggu status baru";
+    list.SetSource(DeviceLines(computers));
+    status.Text = $"{device.Name}: menunggu status baru setelah Launch.";
+
     try
     {
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
@@ -690,7 +756,7 @@ static async Task LaunchApplicationAsync(ComputerDevice device, string applicati
         device.LastAction = response.IsSuccessStatusCode
             ? $"launch {application} OK"
             : $"launch gagal ({(int)response.StatusCode})";
-        status.Text = $"{device.Name}: {device.LastAction}.";
+        status.Text = $"{device.Name}: {device.LastAction}. Status perangkat menunggu pemeriksaan berikutnya.";
     }
     catch (Exception ex)
     {
@@ -709,10 +775,10 @@ static void ShowLaunchAllDialog(DeviceContext context, List<ComputerDevice> comp
         return;
     }
 
-    var dialog = new Dialog(" LAUNCH ALL ONLINE DEVICES ", 66, 11) { ColorScheme = context.Scheme };
-    var alias = new TextField("notepad") { X = 20, Y = 2, Width = 34, ColorScheme = context.Scheme };
-    var launch = new Button("Jalankan") { X = 20, Y = 5, ColorScheme = context.Scheme };
-    var cancel = new Button("Batal") { X = Pos.Right(launch) + 2, Y = 5, ColorScheme = context.Scheme };
+    var dialog = new Dialog(" LAUNCH ALL ONLINE DEVICES ", 66, 11) { Scheme = context.Scheme };
+    var alias = new TextField("notepad") { X = 20, Y = 2, Width = 34, Scheme = context.Scheme };
+    var launch = new Button("Jalankan") { X = 20, Y = 5, Scheme = context.Scheme };
+    var cancel = new Button("Batal") { X = Pos.Right(launch) + 2, Y = 5, Scheme = context.Scheme };
     launch.Accepting += (_, _) =>
     {
         var name = alias.Text?.ToString()?.Trim() ?? "";
@@ -723,7 +789,7 @@ static void ShowLaunchAllDialog(DeviceContext context, List<ComputerDevice> comp
     cancel.Accepting += (_, _) => Application.RequestStop();
     EnableEscape(dialog, () => Application.RequestStop());
     dialog.Add(
-        new Label($"Alias aplikasi ({onlineCount} online):") { X = 2, Y = 2, ColorScheme = context.Scheme },
+        new Label($"Alias aplikasi ({onlineCount} online):") { X = 2, Y = 2, Scheme = context.Scheme },
         alias, launch, cancel);
     Application.Run(dialog);
 }
@@ -749,6 +815,14 @@ static async Task LaunchApplicationsAllAsync(List<ComputerDevice> computers, str
         return;
     }
 
+    foreach (var device in onlineDevices)
+    {
+        device.Status = "Wait";
+        device.LastAction = $"launch {application} menunggu status baru";
+    }
+    list.SetSource(DeviceLines(computers));
+    status.Text = $"Launch All '{application}': menunggu status baru dari {onlineDevices.Count} device.";
+
     using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
     var success = 0;
     await Parallel.ForEachAsync(onlineDevices, new ParallelOptions { MaxDegreeOfParallelism = 16 }, async (device, cancellationToken) =>
@@ -771,7 +845,7 @@ static async Task LaunchApplicationsAllAsync(List<ComputerDevice> computers, str
     });
 
     list.SetSource(DeviceLines(computers));
-    status.Text = $"Launch All '{application}': {success}/{onlineDevices.Count} berhasil. Device Offline dilewati.";
+    status.Text = $"Launch All '{application}': {success}/{onlineDevices.Count} berhasil. Menunggu status baru.";
 }
 
 static void AddGroup(DeviceContext context, ListView list, Label status)
@@ -788,8 +862,8 @@ static void AddDevice(DeviceContext context, ListView list, Label status)
     var name = new TextField("") { X = 18, Y = 3, Width = 35 };
     var ip = new TextField("") { X = 18, Y = 5, Width = 35 };
     var mac = new TextField("") { X = 18, Y = 7, Width = 35 };
-    var save = new Button("Simpan") { X = 18, Y = 10, ColorScheme = context.Scheme };
-    var cancel = new Button("Batal") { X = Pos.Right(save) + 2, Y = 10, ColorScheme = context.Scheme };
+    var save = new Button("Simpan") { X = 18, Y = 10, Scheme = context.Scheme };
+    var cancel = new Button("Batal") { X = Pos.Right(save) + 2, Y = 10, Scheme = context.Scheme };
     dialog.Add(new Label("Group:") { X = 2, Y = 1 }, group, new Label("Nama:") { X = 2, Y = 3 }, name,
         new Label("IP address:") { X = 2, Y = 5 }, ip, new Label("MAC address:") { X = 2, Y = 7 }, mac, save, cancel);
     save.Accepting += (_, _) =>
@@ -820,13 +894,13 @@ static void MoveSelectedDevice(DeviceContext context, ListView list, Label statu
     var selected = SelectedDevice(list, context.VisibleDevices);
     if (selected is null) { status.Text = "Pilih perangkat terlebih dahulu."; return; }
     var dialog = new Dialog($"Pindahkan {selected.Name}", 55, 15);
-    var groups = new ListView(context.Config.Groups) { X = 2, Y = 1, Width = Dim.Fill(2), Height = Dim.Fill(4), ColorScheme = context.Scheme };
-    var move = new Button("Pindahkan") { X = 2, Y = Pos.AnchorEnd(2), ColorScheme = context.Scheme };
-    var cancel = new Button("Batal") { X = Pos.Right(move) + 2, Y = Pos.AnchorEnd(2), ColorScheme = context.Scheme };
+    var groups = new ListView(context.Config.Groups) { X = 2, Y = 1, Width = Dim.Fill(2), Height = Dim.Fill(4), Scheme = context.Scheme };
+    var move = new Button("Pindahkan") { X = 2, Y = Pos.AnchorEnd(2), Scheme = context.Scheme };
+    var cancel = new Button("Batal") { X = Pos.Right(move) + 2, Y = Pos.AnchorEnd(2), Scheme = context.Scheme };
     dialog.Add(groups, move, cancel);
     move.Accepting += (_, _) =>
     {
-        var index = groups.SelectedItem;
+        var index = groups.SelectedItem ?? -1;
         if (index < 0 || index >= context.Config.Groups.Count) return;
         selected.Group = context.Config.Groups[index];
         DeviceStore.Save(context.Config.Devices, context.Config.Groups);
@@ -866,13 +940,13 @@ static void MoveSelectedDevices(DeviceContext context, ListView list, Label stat
     }
 
     var dialog = new Dialog($"Pindahkan {selected.Count} device", 55, 15);
-    var groups = new ListView(context.Config.Groups) { X = 2, Y = 1, Width = Dim.Fill(2), Height = Dim.Fill(4), ColorScheme = context.Scheme };
-    var move = new Button("Pindahkan") { X = 2, Y = Pos.AnchorEnd(2), ColorScheme = context.Scheme };
-    var cancel = new Button("Batal") { X = Pos.Right(move) + 2, Y = Pos.AnchorEnd(2), ColorScheme = context.Scheme };
+    var groups = new ListView(context.Config.Groups) { X = 2, Y = 1, Width = Dim.Fill(2), Height = Dim.Fill(4), Scheme = context.Scheme };
+    var move = new Button("Pindahkan") { X = 2, Y = Pos.AnchorEnd(2), Scheme = context.Scheme };
+    var cancel = new Button("Batal") { X = Pos.Right(move) + 2, Y = Pos.AnchorEnd(2), Scheme = context.Scheme };
     dialog.Add(groups, move, cancel);
     move.Accepting += (_, _) =>
     {
-        var index = groups.SelectedItem;
+        var index = groups.SelectedItem ?? -1;
         if (index < 0 || index >= context.Config.Groups.Count) return;
         var target = context.Config.Groups[index];
         foreach (var device in selected) device.Group = target;
@@ -1021,7 +1095,7 @@ static void LegacyMoveSelectedDevice(ListView list, List<ComputerDevice> compute
 
     move.Accepting += (_, _) =>
     {
-        var index = groupList.SelectedItem;
+        var index = groupList.SelectedItem ?? -1;
         if (index < 0 || index >= groups.Count) return;
         selected.Group = groups[index];
         DeviceStore.Save(computers, groups);
@@ -1150,10 +1224,57 @@ public sealed class DeviceConfig
     public List<string> Groups { get; set; } = ["Lab 1", "Lab 2"];
 }
 
-public sealed class DeviceContext(DeviceConfig config, ColorScheme scheme)
+static class StatusRefreshGate
+{
+    private static readonly HttpClient Client = new();
+    private static int _running;
+
+    public static bool TryEnter() => Interlocked.Exchange(ref _running, 1) == 0;
+
+    public static void Exit() => Volatile.Write(ref _running, 0);
+
+    public static async Task<StatusProbeResult[]> ProbeAsync(ComputerDevice[] devices)
+    {
+        using var limiter = new SemaphoreSlim(Math.Min(16, devices.Length));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+        var tasks = devices.Select(async device =>
+        {
+            var acquired = false;
+            try
+            {
+                await limiter.WaitAsync(timeout.Token);
+                acquired = true;
+                using var response = await Client.GetAsync($"{device.AgentUrl}/health", timeout.Token);
+                return new StatusProbeResult(
+                    device,
+                    response.IsSuccessStatusCode ? "Online" : "Error",
+                    response.IsSuccessStatusCode ? DateTimeOffset.Now : null);
+            }
+            catch (OperationCanceledException)
+            {
+                return new StatusProbeResult(device, "Offline", null);
+            }
+            catch
+            {
+                return new StatusProbeResult(device, "Offline", null);
+            }
+            finally
+            {
+                if (acquired) limiter.Release();
+            }
+        });
+
+        return await Task.WhenAll(tasks);
+    }
+}
+
+sealed record StatusProbeResult(ComputerDevice Device, string Status, DateTimeOffset? LastSeen);
+
+public sealed class DeviceContext(DeviceConfig config, Scheme scheme)
 {
     public DeviceConfig Config { get; private set; } = config;
-    public ColorScheme Scheme { get; } = scheme;
+    public Scheme Scheme { get; } = scheme;
     public string CurrentGroup { get; set; } = "";
     public List<ComputerDevice> VisibleDevices => Config.Devices
         .Where(device => string.Equals(device.Group, CurrentGroup, StringComparison.OrdinalIgnoreCase))
@@ -1234,32 +1355,42 @@ public static class WakeOnLan
 
 // Compatibility adapters used while the application moves from Terminal.Gui v1
 // construction syntax to the v2 property/event model.
-sealed class Window : Terminal.Gui.Window
+sealed class Window : Terminal.Gui.Views.Window
 {
+    private Scheme? _scheme;
+    public Scheme? Scheme { get => _scheme; set { _scheme = value; SetScheme(value); } }
     public Window() : base() { }
     public Window(string title) : this() => Title = title;
 }
 
-sealed class Label : Terminal.Gui.Label
+sealed class Label : Terminal.Gui.Views.Label
 {
+    private Scheme? _scheme;
+    public Scheme? Scheme { get => _scheme; set { _scheme = value; SetScheme(value); } }
     public Label() : base() { }
     public Label(string text) : this() => Text = text;
 }
 
-sealed class Button : Terminal.Gui.Button
+sealed class Button : Terminal.Gui.Views.Button
 {
+    private Scheme? _scheme;
+    public Scheme? Scheme { get => _scheme; set { _scheme = value; SetScheme(value); } }
     public Button() : base() { }
     public Button(string text) : this() => Text = text;
 }
 
-sealed class TextField : Terminal.Gui.TextField
+sealed class TextField : Terminal.Gui.Views.TextField
 {
+    private Scheme? _scheme;
+    public Scheme? Scheme { get => _scheme; set { _scheme = value; SetScheme(value); } }
     public TextField() : base() { }
     public TextField(string text) : this() => Text = text;
 }
 
-sealed class ListView : Terminal.Gui.ListView
+sealed class ListView : Terminal.Gui.Views.ListView
 {
+    private Scheme? _scheme;
+    public Scheme? Scheme { get => _scheme; set { _scheme = value; SetScheme(value); } }
     public ListView() : base() { }
 
     public ListView(IEnumerable<string> items) : this()
@@ -1269,12 +1400,34 @@ sealed class ListView : Terminal.Gui.ListView
 
     public void SetSource(IEnumerable<string> items)
     {
-        Source = new ListWrapper<string>(new ObservableCollection<string>(items));
+        var previousMarks = Source is null
+            ? []
+            : Enumerable.Range(0, Source.Count)
+                .Where(index => Source.IsMarked(index))
+                .ToArray();
+        var values = items.ToArray();
+
+        foreach (var index in previousMarks)
+        {
+            if (index < 0 || index >= values.Length || !values[index].StartsWith("[ ] ", StringComparison.Ordinal))
+                continue;
+
+            values[index] = "[✓] " + values[index][4..];
+        }
+
+        Source = new ListWrapper<string>(new ObservableCollection<string>(values));
+        foreach (var index in previousMarks)
+        {
+            if (index >= 0 && index < Source.Count)
+                Source.SetMark(index, true);
+        }
     }
 }
 
-sealed class Dialog : Terminal.Gui.Dialog
+sealed class Dialog : Terminal.Gui.Views.Dialog
 {
+    private Scheme? _scheme;
+    public Scheme? Scheme { get => _scheme; set { _scheme = value; SetScheme(value); } }
     public Dialog() : base() { }
 
     public Dialog(string title, int width, int height) : this()
@@ -1285,27 +1438,39 @@ sealed class Dialog : Terminal.Gui.Dialog
     }
 }
 
+// v2.5 requires an IApplication instance for MessageBox calls. Keep the
+// existing menu code concise while routing dialogs through the active app.
+static class MessageBox
+{
+    public static int? Query(string title, string message, params string[] buttons) =>
+        Terminal.Gui.Views.MessageBox.Query(Terminal.Gui.App.Application.Instance, title, message, buttons);
+
+    public static int? ErrorQuery(string title, string message, params string[] buttons) =>
+        Terminal.Gui.Views.MessageBox.ErrorQuery(Terminal.Gui.App.Application.Instance, title, message, buttons);
+}
+
 static class Application
 {
     public static DriverFacade Driver { get; } = new();
+    public static Terminal.Gui.App.ApplicationPopover? Popovers => Terminal.Gui.App.Application.Popovers;
 
-    public static void Init() => Terminal.Gui.Application.Init();
-    public static void Shutdown() => Terminal.Gui.Application.Shutdown();
-    public static void Run(Terminal.Gui.Toplevel view) => Terminal.Gui.Application.Run(view);
-    public static void RequestStop() => Terminal.Gui.Application.RequestStop();
+    public static void Init() => Terminal.Gui.App.Application.Init();
+    public static void Shutdown() => Terminal.Gui.App.Application.Shutdown();
+    public static void Run(Terminal.Gui.App.IRunnable view) => Terminal.Gui.App.Application.Run(view);
+    public static void RequestStop() => Terminal.Gui.App.Application.RequestStop();
     public static CompatMainLoop MainLoop { get; } = new();
 
     public sealed class DriverFacade
     {
-        public Terminal.Gui.Attribute MakeAttribute(Terminal.Gui.Color foreground, Terminal.Gui.Color background) =>
+        public Terminal.Gui.Drawing.Attribute MakeAttribute(Terminal.Gui.Drawing.Color foreground, Terminal.Gui.Drawing.Color background) =>
             new(foreground, background);
     }
 
     public sealed class CompatMainLoop
     {
         public object? AddTimeout(TimeSpan timeout, Func<object?, bool> callback) =>
-            Terminal.Gui.Application.AddTimeout(timeout, () => callback(null));
+            Terminal.Gui.App.Application.AddTimeout(timeout, () => callback(null));
 
-        public void Invoke(Action action) => Terminal.Gui.Application.Invoke(action);
+        public void Invoke(Action action) => Terminal.Gui.App.Application.Invoke(action);
     }
 }
