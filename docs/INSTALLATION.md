@@ -168,14 +168,25 @@ curl http://127.0.0.1:5050/health
 sudo ss -tulpn | grep ':5050'
 ```
 
-## 4. Instalasi agent cepat di Windows
+## 4. Instalasi agent di Windows
+
+Set token sebagai environment variable sistem:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "LAB_REMOTE_AGENT_TOKEN",
+  "GANTI_DENGAN_TOKEN_KUAT",
+  "Machine"
+)
+```
+
+### OPSI A - Instalasi Cepat
 
 Pastikan PowerShell 7 sudah terpasang. Jika belum, pasang melalui winget:
 
 ```
 winget install --id Microsoft.Powershell --source winget
 ```
-
 
 Panggil PowerShell 
 
@@ -243,50 +254,17 @@ Run PowerShell as Administrator:
 New-NetFirewallRule -DisplayName "Open Port 5050" -Direction Inbound -Protocol TCP -LocalPort 5050 -Action Allow
 ```
 
+### OPSI B - Instalasi agent manual di Windows
 
-
-## 5. Konfigurasi Wake dan Launch
-
-Agent hanya menjalankan aplikasi yang terdaftar pada allowlist `Agent:AllowedApplications`.
-
-Contoh Windows di `appsettings.json`:
-
-```json
-"AllowedApplications": {
-  "notepad": "notepad.exe",
-  "chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-}
+Download : https://github.com/Ocph23/OcphLabRemote/releases
 ```
-
-Contoh Linux:
-
-```json
-"AllowedApplications": {
-  "browser": "/usr/bin/firefox"
-}
+ocphlabremote-agent-win-x64.zip
 ```
-
-Setelah mengubah konfigurasi Linux:
-
-```bash
-sudo systemctl restart ocphlabremote-agent
-```
-
-Pada TUI, pilih device lalu tekan `Enter`. Gunakan `Wake` untuk menyalakan perangkat. Setelah status berubah menjadi `Online`, pilih `Launch` dan masukkan alias aplikasi.
-
-Pada Windows, agent menggunakan sesi user yang sedang login agar aplikasi GUI tampil di desktop user, bukan hanya berjalan di sesi Windows Service.
-
-Restart Service Agent
-```
-Restart-Service ocphlabremote-agent
-```
-
-### Instalasi agent manual di Windows
 
 Buka PowerShell sebagai Administrator. Salin folder publish ke:
 
 ```text
-C:\Program Files\LabRemote.Agent
+C:\Program Files\OCPHLabRemote\Agent
 ```
 
 Set token sebagai environment variable sistem:
@@ -315,18 +293,18 @@ Daftarkan sebagai Windows Service:
 
 ```powershell
 New-Service `
-  -Name "LabRemoteAgent" `
-  -DisplayName "LabRemote Agent" `
-  -Description "LabRemote control agent" `
-  -BinaryPathName "C:\Program Files\LabRemote.Agent\LabRemote.Agent.exe" `
+  -Name "ocphlabremote-agent" `
+  -DisplayName "Ocph LabRemote Agent" `
+  -Description "Ocph LabRemote control agent" `
+  -BinaryPathName "C:\Program Files\OCPHLabRemote\Agent\LabRemote.Agent.exe" `
   -StartupType Automatic
 ```
 
 Jalankan:
 
 ```powershell
-Start-Service LabRemoteAgent
-Get-Service LabRemoteAgent
+Start-Service ocphlabremote-agent
+Get-Service ocphlabremote-agent
 ```
 
 Uji lokal:
@@ -335,6 +313,77 @@ Uji lokal:
 Invoke-WebRequest http://127.0.0.1:5050/health
 Get-NetTCPConnection -LocalPort 5050 -State Listen
 ```
+
+
+#### Hapus Service
+
+Stop the service
+```
+Stop-Service -Name "ocphlabremote-agent" -Force
+```
+atau 
+```
+sc.exe stop "ocphlabremote-agent"
+```
+
+
+
+Remove the service
+```
+Remove-Service -Name "ocphlabremote-agent"
+```
+atau 
+```
+sc.exe delete "ocphlabremote-agent"
+```
+
+
+## 5. Konfigurasi Wake dan Launch
+
+Agent hanya menjalankan aplikasi yang terdaftar pada allowlist `Agent:AllowedApplications`.
+
+Contoh Windows di `appsettings.json`:
+
+```json
+"AllowedApplications": {
+  "notepad": {
+    "Executable": "C:\\Windows\\System32\\notepad.exe",
+    "Arguments": ""
+  },
+  "seb-ipdn": {
+    "Executable": "C:\\Program Files\\SafeExamBrowser\\Seb.exe",
+    "Arguments": "\"D:\\Downloads\\SEB-CAT-IPDN-0824.seb\""
+  },
+  "chrome-ipdn": {
+    "Executable": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "Arguments": "--new-window \"https://example.com\""
+  }
+}
+```
+
+Contoh Linux:
+
+```json
+"AllowedApplications": {
+  "browser": "/usr/bin/firefox"
+}
+```
+
+Setelah mengubah konfigurasi Linux:
+
+```bash
+sudo systemctl restart ocphlabremote-agent
+```
+
+Pada TUI, pilih device lalu tekan `Enter`. Gunakan `Wake` untuk menyalakan perangkat. Setelah status berubah menjadi `Online`, pilih `Launch` dan masukkan alias aplikasi.
+
+Pada Windows, agent menggunakan sesi user yang sedang login agar aplikasi GUI tampil di desktop user, bukan hanya berjalan di sesi Windows Service.
+
+Restart Service Agent
+```
+Restart-Service ocphlabremote-agent
+```
+
 
 ## 6. Instalasi controller
 
