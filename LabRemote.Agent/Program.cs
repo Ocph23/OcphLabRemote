@@ -2,9 +2,12 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService();
+var logDirectory = AgentLogPath.Resolve();
+builder.Logging.AddProvider(new FileLoggerProvider(logDirectory));
 var token = Environment.GetEnvironmentVariable("LAB_REMOTE_AGENT_TOKEN")
             ?? builder.Configuration["Agent:Token"]
             ?? "change-me";
@@ -13,10 +16,16 @@ var allowedApplications = builder.Configuration.GetSection("Agent:AllowedApplica
     .Where(entry => !string.IsNullOrWhiteSpace(entry.Value))
     .ToDictionary(entry => entry.Key, entry => entry.Value!, StringComparer.OrdinalIgnoreCase);
 
-if (token == "change-me")
-    Console.WriteLine("WARNING: set Agent:Token or LAB_REMOTE_AGENT_TOKEN before production use.");
-
 var app = builder.Build();
+var logger = app.Logger;
+logger.LogInformation(
+    "LabRemote Agent started. OS={OperatingSystem}, Version={Version}, LogDirectory={LogDirectory}",
+    Environment.OSVersion.VersionString,
+    typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown",
+    logDirectory);
+
+if (token == "change-me")
+    logger.LogWarning("Agent token is still the default value. Set Agent:Token or LAB_REMOTE_AGENT_TOKEN before production use.");
 
 app.MapGet("/health", () => Results.Ok(new
 {
@@ -34,10 +43,16 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapPost("/power/{action}", (string action, HttpRequest request) =>
 {
     if (!request.Headers.TryGetValue("X-Agent-Token", out var suppliedToken) || suppliedToken != token)
+    {
+        logger.LogWarning("Unauthorized power request. Action={Action}, RemoteIp={RemoteIp}", action, request.HttpContext.Connection.RemoteIpAddress);
         return Results.Unauthorized();
+    }
 
     if (action is not ("shutdown" or "restart"))
+    {
+        logger.LogWarning("Rejected unsupported power action. Action={Action}, RemoteIp={RemoteIp}", action, request.HttpContext.Connection.RemoteIpAddress);
         return Results.BadRequest(new { error = "Action must be shutdown or restart." });
+    }
 
     var command = OperatingSystem.IsWindows()
         ? (action == "shutdown" ? ("shutdown", "/s /t 5") : ("shutdown", "/r /t 5"))
@@ -45,6 +60,9 @@ app.MapPost("/power/{action}", (string action, HttpRequest request) =>
 
     try
     {
+        logger.LogInformation("Power command accepted. Action={Action}, Command={Command}, RemoteIp={RemoteIp}",
+            action, command.Item1, request.HttpContext.Connection.RemoteIpAddress);
+
         Process.Start(new ProcessStartInfo
         {
             FileName = command.Item1,
@@ -57,6 +75,7 @@ app.MapPost("/power/{action}", (string action, HttpRequest request) =>
     }
     catch (Exception ex)
     {
+        logger.LogError(ex, "Failed to execute power action. Action={Action}", action);
         return Results.Problem($"Gagal menjalankan perintah: {ex.Message}");
     }
 });
@@ -64,19 +83,29 @@ app.MapPost("/power/{action}", (string action, HttpRequest request) =>
 app.MapPost("/app/launch/{name}", (string name, HttpRequest request) =>
 {
     if (!request.Headers.TryGetValue("X-Agent-Token", out var suppliedToken) || suppliedToken != token)
+    {
+        logger.LogWarning("Unauthorized application launch request. Application={Application}, RemoteIp={RemoteIp}",
+            name, request.HttpContext.Connection.RemoteIpAddress);
         return Results.Unauthorized();
+    }
 
     if (!allowedApplications.TryGetValue(name, out var executable))
+    {
+        logger.LogWarning("Application launch rejected because it is not allowlisted. Application={Application}", name);
         return Results.NotFound(new { error = $"Aplikasi '{name}' tidak terdaftar di allowlist agent." });
+    }
 
     try
     {
+        logger.LogInformation("Application launch accepted. Application={Application}, Executable={Executable}, RemoteIp={RemoteIp}",
+            name, executable, request.HttpContext.Connection.RemoteIpAddress);
         InteractiveProcessLauncher.Start(executable);
 
         return Results.Accepted($"/app/launch/{name}", new { application = name, message = "Aplikasi dijalankan." });
     }
     catch (Exception ex)
     {
+        logger.LogError(ex, "Failed to launch application. Application={Application}", name);
         return Results.Problem($"Gagal menjalankan aplikasi: {ex.Message}");
     }
 });
@@ -234,5 +263,96 @@ static class InteractiveProcessLauncher
         public IntPtr hThread;
         public int processId;
         public int threadId;
+    }
+}
+
+static class AgentLogPath
+{
+    public static string Resolve()
+    {
+        var primary = OperatingSystem.IsWindows()
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ocphlabremote-agent", "logs")
+            : "/var/log/ocphlabremote-agent";
+
+        try
+        {
+            Directory.CreateDirectory(primary);
+            return primary;
+        }
+        catch
+        {
+            return Path.Combine(AppContext.BaseDirectory, "logs");
+        }
+    }
+}
+
+sealed class FileLoggerProvider : ILoggerProvider
+{
+    private readonly string _directory;
+    private readonly string _fallbackDirectory;
+    private readonly object _sync = new();
+
+    public FileLoggerProvider(string directory)
+    {
+        _directory = directory;
+        _fallbackDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
+    }
+
+    public ILogger CreateLogger(string categoryName) => new FileLogger(this, categoryName);
+
+    public void Dispose() { }
+
+    internal void Write(string categoryName, LogLevel logLevel, string message, Exception? exception)
+    {
+        var line = $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz} [{logLevel}] [{categoryName}] {message}";
+        if (exception is not null)
+            line += Environment.NewLine + exception;
+
+        lock (_sync)
+        {
+            try
+            {
+                Append(_directory, line);
+            }
+            catch
+            {
+                // A service account may not have permission for /var/log or ProgramData.
+                // Keep the agent operational and write beside the application instead.
+                try { Append(_fallbackDirectory, line); } catch { /* logging must never stop the agent */ }
+            }
+        }
+    }
+
+    private static void Append(string directory, string line)
+    {
+        Directory.CreateDirectory(directory);
+        var file = Path.Combine(directory, $"agent-{DateTime.Now:yyyy-MM-dd}.log");
+        File.AppendAllText(file, line + Environment.NewLine, Encoding.UTF8);
+    }
+}
+
+sealed class FileLogger(FileLoggerProvider provider, string categoryName) : ILogger
+{
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+    public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        if (!IsEnabled(logLevel))
+            return;
+
+        provider.Write(categoryName, logLevel, formatter(state, exception), exception);
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+        public void Dispose() { }
     }
 }
