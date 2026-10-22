@@ -11,10 +11,18 @@ builder.Logging.AddProvider(new FileLoggerProvider(logDirectory));
 var token = Environment.GetEnvironmentVariable("LAB_REMOTE_AGENT_TOKEN")
             ?? builder.Configuration["Agent:Token"]
             ?? "change-me";
+
+// PERUBAHAN: Membaca struktur objek (Executable & Arguments)
 var allowedApplications = builder.Configuration.GetSection("Agent:AllowedApplications")
     .GetChildren()
-    .Where(entry => !string.IsNullOrWhiteSpace(entry.Value))
-    .ToDictionary(entry => entry.Key, entry => entry.Value!, StringComparer.OrdinalIgnoreCase);
+    .Where(entry => !string.IsNullOrWhiteSpace(entry.GetSection("Executable").Value))
+    .ToDictionary(
+        entry => entry.Key,
+        entry => new {
+            Executable = entry.GetSection("Executable").Value!,
+            Arguments = entry.GetSection("Arguments").Value ?? string.Empty
+        },
+        StringComparer.OrdinalIgnoreCase);
 
 var app = builder.Build();
 var logger = app.Logger;
@@ -89,7 +97,8 @@ app.MapPost("/app/launch/{name}", (string name, HttpRequest request) =>
         return Results.Unauthorized();
     }
 
-    if (!allowedApplications.TryGetValue(name, out var executable))
+    // PERUBAHAN: Memeriksa dari dictionary yang menyimpan objek anonim
+    if (!allowedApplications.TryGetValue(name, out var appConfig))
     {
         logger.LogWarning("Application launch rejected because it is not allowlisted. Application={Application}", name);
         return Results.NotFound(new { error = $"Aplikasi '{name}' tidak terdaftar di allowlist agent." });
@@ -97,9 +106,11 @@ app.MapPost("/app/launch/{name}", (string name, HttpRequest request) =>
 
     try
     {
-        logger.LogInformation("Application launch accepted. Application={Application}, Executable={Executable}, RemoteIp={RemoteIp}",
-            name, executable, request.HttpContext.Connection.RemoteIpAddress);
-        InteractiveProcessLauncher.Start(executable);
+        logger.LogInformation("Application launch accepted. Application={Application}, Executable={Executable}, Arguments={Arguments}, RemoteIp={RemoteIp}",
+            name, appConfig.Executable, appConfig.Arguments, request.HttpContext.Connection.RemoteIpAddress);
+
+        // PERUBAHAN: Meneruskan Executable dan Arguments
+        InteractiveProcessLauncher.Start(appConfig.Executable, appConfig.Arguments);
 
         return Results.Accepted($"/app/launch/{name}", new { application = name, message = "Aplikasi dijalankan." });
     }
@@ -114,23 +125,26 @@ app.Run();
 
 static class InteractiveProcessLauncher
 {
-    public static void Start(string executable)
+    // PERUBAHAN: Tambah parameter arguments
+    public static void Start(string executable, string arguments = "")
     {
         if (!OperatingSystem.IsWindows())
         {
             Process.Start(new ProcessStartInfo
             {
                 FileName = executable,
+                Arguments = arguments, // PERUBAHAN: Set argument di sini
                 UseShellExecute = false,
                 WorkingDirectory = Path.GetDirectoryName(executable) ?? AppContext.BaseDirectory
             });
             return;
         }
 
-        StartOnActiveWindowsSession(executable);
+        StartOnActiveWindowsSession(executable, arguments);
     }
 
-    private static void StartOnActiveWindowsSession(string executable)
+    // PERUBAHAN: Tambah parameter arguments
+    private static void StartOnActiveWindowsSession(string executable, string arguments)
     {
         var sessionId = WTSGetActiveConsoleSessionId();
         if (sessionId == uint.MaxValue)
@@ -152,7 +166,10 @@ static class InteractiveProcessLauncher
                 try
                 {
                     var startup = new STARTUPINFO { cb = Marshal.SizeOf<STARTUPINFO>() };
-                    var commandLine = new StringBuilder($"\"{executable}\"");
+
+                    // PERUBAHAN: Gabungkan executable dan arguments dengan spasi pembatas
+                    var commandLine = new StringBuilder($"\"{executable}\" {arguments}".TrimEnd());
+
                     var workingDirectory = Path.GetDirectoryName(executable) ?? AppContext.BaseDirectory;
                     const uint createNewConsole = 0x00000010;
                     const uint unicodeEnvironment = 0x00000400;
